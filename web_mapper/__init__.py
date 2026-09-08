@@ -16,6 +16,13 @@ __status__ = "Production"
 
 from .cert_inspector import CertificateInfo, CertInspector
 from .checkpoint import SessionCheckpoint
+from .compliance import (
+    ComplianceBenchmark,
+    ComplianceEngine,
+    ComplianceFinding,
+    ComplianceReport,
+    ComplianceRule,
+)
 from .config import ScanConfig
 from .crawler import RouteHarvester
 from .engine import ExecutionEngine
@@ -45,6 +52,11 @@ __all__ = [
     "SecurityFinding",
     "SecurityAssertion",
     "SecurityAssertionValidator",
+    "ComplianceEngine",
+    "ComplianceFinding",
+    "ComplianceReport",
+    "ComplianceBenchmark",
+    "ComplianceRule",
     "CertInspector",
     "CertificateInfo",
     "RouteHarvester",

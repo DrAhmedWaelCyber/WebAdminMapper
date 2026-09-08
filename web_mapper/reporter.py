@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set
 
 from .cert_inspector import CertificateInfo
+from .compliance import ComplianceFinding, ComplianceReport
 from .config import ScanConfig
 from .network_diag import NetworkDiagResult
 from .requester import ScanResult
@@ -120,6 +121,7 @@ class ScanReporter:
         cert_info: Optional[CertificateInfo] = None,
         network_diag: Optional[NetworkDiagResult] = None,
         security_assertions: Optional[List[SecurityAssertion]] = None,
+        compliance_report: Optional[ComplianceReport] = None,
         crawled_routes_count: int = 0,
     ) -> None:
         """Display comprehensive scan summary, security posture, and hierarchy."""
@@ -167,6 +169,17 @@ class ScanReporter:
             med_disp = f"{Colors.YELLOW}{med_count} Medium{Colors.RESET}" if med_count else "0 Medium"
             print(f"  Security Assertions: {high_disp}, {med_disp}, {low_count} Low/Info ({len(security_assertions)} findings)")
 
+        if compliance_report:
+            c_col = (
+                Colors.GREEN if compliance_report.compliance_score >= 85.0
+                else Colors.YELLOW if compliance_report.compliance_score >= 60.0
+                else Colors.RED
+            )
+            print(f"  Compliance Baseline: Grade {c_col}{compliance_report.compliance_grade}{Colors.RESET} ({compliance_report.compliance_score:.1f}%) - {compliance_report.passed_rules} Passed, {compliance_report.failed_rules} Failed [Benchmark: {compliance_report.benchmark.upper()}]")
+            if compliance_report.benchmark_scores:
+                bm_summary = ", ".join(f"{k.split()[0]}={v}%" for k, v in compliance_report.benchmark_scores.items())
+                print(f"  Benchmark Scores  : {bm_summary}")
+
         print(f"  Developer/Author  : {Colors.BOLD}Ahmed Wael{Colors.RESET}")
         print(f"{Colors.BLUE}{'=' * 74}{Colors.RESET}")
 
@@ -188,6 +201,7 @@ class ScanReporter:
         cert_info: Optional[CertificateInfo] = None,
         network_diag: Optional[NetworkDiagResult] = None,
         security_assertions: Optional[List[SecurityAssertion]] = None,
+        compliance_report: Optional[ComplianceReport] = None,
     ) -> Optional[Path]:
         """Export results to configured destination file."""
         if not self.config.output_file:
@@ -198,13 +212,13 @@ class ScanReporter:
         fmt = self.config.output_format.lower()
 
         if fmt == "html":
-            self._save_html(out_path, results, duration_sec, detected_techs, detected_waf, sitemap, security_audit, cert_info, network_diag, security_assertions)
+            self._save_html(out_path, results, duration_sec, detected_techs, detected_waf, sitemap, security_audit, cert_info, network_diag, security_assertions, compliance_report)
         elif fmt == "json":
-            self._save_json(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions)
+            self._save_json(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions, compliance_report)
         elif fmt == "csv":
             self._save_csv(out_path, results)
         elif fmt == "markdown":
-            self._save_markdown(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions)
+            self._save_markdown(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions, compliance_report)
         else:
             self._save_txt(out_path, results)
 
@@ -221,6 +235,7 @@ class ScanReporter:
         cert: Optional[CertificateInfo],
         network_diag: Optional[NetworkDiagResult] = None,
         security_assertions: Optional[List[SecurityAssertion]] = None,
+        compliance_report: Optional[ComplianceReport] = None,
     ) -> None:
         latencies = [r.response_time_ms for r in results]
         data = {
@@ -239,6 +254,7 @@ class ScanReporter:
                 "tls_certificate": cert.to_dict() if cert else None,
                 "security_audit": sec.to_dict() if sec else None,
                 "security_assertions": [a.to_dict() for a in (security_assertions or [])],
+                "compliance_report": compliance_report.to_dict() if compliance_report else None,
             },
             "configuration": self.config.to_dict(),
             "results": [r.to_dict() for r in results],
@@ -282,6 +298,7 @@ class ScanReporter:
         cert: Optional[CertificateInfo],
         network_diag: Optional[NetworkDiagResult] = None,
         security_assertions: Optional[List[SecurityAssertion]] = None,
+        compliance_report: Optional[ComplianceReport] = None,
     ) -> None:
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# WebAdminMapper Audit Report\n\n")
@@ -304,6 +321,20 @@ class ScanReporter:
                 f.write("### Defensive Header Findings\n\n")
                 for finding in sec.findings:
                     f.write(f"- **[{finding.severity}] {finding.name}:** {finding.description} *(Fix: {finding.recommendation})*\n")
+
+            if compliance_report:
+                f.write("\n### Defensive Security Assessment & Compliance Baseline Audit\n\n")
+                f.write(f"- **Standard / Benchmark:** `{compliance_report.benchmark.upper()}`\n")
+                f.write(f"- **Compliance Grade:** **{compliance_report.compliance_grade}** ({compliance_report.compliance_score:.1f}%)\n")
+                f.write(f"- **Control Statistics:** {compliance_report.passed_rules} Passed, {compliance_report.failed_rules} Failed\n")
+                if compliance_report.benchmark_scores:
+                    bm_line = " | ".join(f"{k}: {v}%" for k, v in compliance_report.benchmark_scores.items())
+                    f.write(f"- **Benchmark Breakdown:** {bm_line}\n")
+                if compliance_report.findings:
+                    f.write("\n| Rule ID | Benchmark | Severity | Status | Control Title | Endpoint | Remediation |\n")
+                    f.write("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
+                    for cf in compliance_report.findings:
+                        f.write(f"| `{cf.rule_id}` | {cf.benchmark} | `{cf.severity}` | `{cf.status}` | **{cf.title}** | `{cf.endpoint}` | {cf.remediation} |\n")
 
             if security_assertions:
                 f.write("\n### Automated Security Assertions & Vulnerability Validations\n\n")
@@ -349,6 +380,7 @@ class ScanReporter:
         cert: Optional[CertificateInfo],
         network_diag: Optional[NetworkDiagResult] = None,
         security_assertions: Optional[List[SecurityAssertion]] = None,
+        compliance_report: Optional[ComplianceReport] = None,
     ) -> None:
         """Generate a sleek, responsive HTML dashboard report."""
         tech_badges = "".join(f'<span class="badge badge-tech">{html.escape(t)}</span>' for t in (techs or [])) or "<em>None detected</em>"
@@ -373,6 +405,60 @@ class ScanReporter:
               </div>
             </div>
             """
+
+        comp_card_html = ""
+        comp_table_html = ""
+        if compliance_report:
+            c_col = "#3fb950" if compliance_report.compliance_score >= 85.0 else "#d29922" if compliance_report.compliance_score >= 60.0 else "#f85149"
+            comp_card_html = f"""
+            <div class="metric-card">
+              <div class="metric-title">Compliance Baseline</div>
+              <div class="metric-value" style="color: {c_col}; font-size: 20px; font-weight: bold;">
+                {html.escape(compliance_report.compliance_grade)} <span style="font-size: 13px; color: #8b949e;">({compliance_report.compliance_score:.1f}%)</span>
+              </div>
+              <div style="font-size: 12px; color: #8b949e; margin-top: 4px;">
+                {compliance_report.passed_rules} Passed &bull; {compliance_report.failed_rules} Failed &bull; Standard: {html.escape(compliance_report.benchmark.upper())}
+              </div>
+            </div>
+            """
+            if compliance_report.findings:
+                cf_rows = []
+                for cf in compliance_report.findings:
+                    badge = "st-5xx" if cf.severity == "HIGH" else "st-4xx" if cf.severity == "MEDIUM" else "st-3xx"
+                    cf_rows.append(f"""
+                    <tr>
+                      <td><code>{html.escape(cf.rule_id)}</code></td>
+                      <td><span class="badge {badge}">{html.escape(cf.severity)}</span></td>
+                      <td><strong>{html.escape(cf.benchmark)}</strong></td>
+                      <td><strong>{html.escape(cf.title)}</strong></td>
+                      <td><code>{html.escape(cf.endpoint)}</code></td>
+                      <td><span style="font-size: 12px; color: #8b949e;">{html.escape(cf.evidence)}</span></td>
+                      <td><code style="color: #7ee787;">{html.escape(cf.remediation)}</code></td>
+                    </tr>
+                    """)
+                comp_table_html = f"""
+                <div class="table-container" style="margin-bottom: 24px;">
+                  <div style="padding: 16px; font-weight: bold; font-size: 16px; border-bottom: 1px solid var(--border);">
+                    📋 Defensive Security Compliance Baseline Audit ({len(compliance_report.findings)} Findings) &bull; Standard: {html.escape(compliance_report.benchmark.upper())}
+                  </div>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Rule ID</th>
+                        <th>Severity</th>
+                        <th>Benchmark</th>
+                        <th>Control Title</th>
+                        <th>Endpoint</th>
+                        <th>Evidence</th>
+                        <th>Defensive Remediation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {"".join(cf_rows)}
+                    </tbody>
+                  </table>
+                </div>
+                """
 
         sec_grade_html = ""
         sec_findings_html = ""
@@ -552,6 +638,7 @@ class ScanReporter:
         ''' if sec_grade_html else ''}
         {cert_html}
         {net_html}
+        {comp_card_html}
       </div>
       <div style="margin-top: 16px; font-size: 14px;">
         <strong>WAF/CDN:</strong> {waf_badge} &bull; 
@@ -579,6 +666,8 @@ class ScanReporter:
       </table>
     </div>
     ''' if sec and sec_findings_html else ''}
+
+    {comp_table_html}
 
     {assertions_html}
 

@@ -97,6 +97,40 @@ class TestScanReporter(unittest.TestCase):
             self.assertIn("Network Diagnostics", content)
             self.assertIn("93.184.216.34", content)
 
+    def test_export_compliance_report(self):
+        from web_mapper.compliance import ComplianceEngine
+        comp_engine = ComplianceEngine(benchmark="all")
+        comp_report = comp_engine.evaluate(results=self.sample_results, base_headers={}, target_url="https://example.com")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Test JSON export with compliance
+            json_file = Path(tmpdir) / "comp_report.json"
+            cfg_json = ScanConfig(target_url="https://example.com", output_file=str(json_file), output_format="json")
+            rep_json = ScanReporter(cfg_json)
+            rep_json.export_results(results=self.sample_results, duration_sec=1.0, compliance_report=comp_report)
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertIsNotNone(data["metadata"]["compliance_report"])
+            self.assertEqual(data["metadata"]["compliance_report"]["author"], "Ahmed Wael")
+
+            # Test HTML export with compliance
+            html_file = Path(tmpdir) / "comp_report.html"
+            cfg_html = ScanConfig(target_url="https://example.com", output_file=str(html_file), output_format="html")
+            rep_html = ScanReporter(cfg_html)
+            rep_html.export_results(results=self.sample_results, duration_sec=1.0, compliance_report=comp_report)
+            html_text = html_file.read_text(encoding="utf-8")
+            self.assertIn("Compliance Baseline", html_text)
+            self.assertIn("OWASP ASVS v4.0", html_text)
+
+            # Test Markdown export with compliance
+            md_file = Path(tmpdir) / "comp_report.md"
+            cfg_md = ScanConfig(target_url="https://example.com", output_file=str(md_file), output_format="markdown")
+            rep_md = ScanReporter(cfg_md)
+            rep_md.export_results(results=self.sample_results, duration_sec=1.0, compliance_report=comp_report)
+            md_text = md_file.read_text(encoding="utf-8")
+            self.assertIn("Defensive Security Assessment & Compliance Baseline Audit", md_text)
+            self.assertIn("OWASP-ASVS", md_text)
+
 
 if __name__ == "__main__":
     unittest.main()

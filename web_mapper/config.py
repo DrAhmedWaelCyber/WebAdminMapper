@@ -91,6 +91,8 @@ class ScanConfig:
     cert_inspect: bool = True
     network_diag: bool = True
     validate_vulns: bool = True
+    compliance_check: bool = True
+    compliance_benchmark: str = "all"  # 'all', 'owasp', 'cis', 'nist'
     checkpoint_file: Optional[str] = None
     resume_checkpoint: Optional[str] = None
 
@@ -135,6 +137,10 @@ class ScanConfig:
         supported_types = {"admin", "common", "sensitive", "cloud", "all"}
         if self.wordlist_type not in supported_types:
             raise ValueError(f"Unsupported wordlist type: '{self.wordlist_type}' (Choices: {supported_types})")
+
+        supported_benchmarks = {"all", "owasp", "cis", "nist"}
+        if self.compliance_benchmark not in supported_benchmarks:
+            raise ValueError(f"Unsupported compliance benchmark: '{self.compliance_benchmark}' (Choices: {supported_benchmarks})")
 
     def to_dict(self) -> Dict[str, any]:
         """Convert configuration to serializable dictionary."""
@@ -181,6 +187,8 @@ class ScanConfig:
             "cert_inspect": self.cert_inspect,
             "network_diag": self.network_diag,
             "validate_vulns": self.validate_vulns,
+            "compliance_check": self.compliance_check,
+            "compliance_benchmark": self.compliance_benchmark,
             "checkpoint_file": self.checkpoint_file,
             "resume_checkpoint": self.resume_checkpoint,
             "author": __author__,

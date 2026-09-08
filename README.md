@@ -30,6 +30,7 @@
    - [Interactive HTML Dashboard & Multi-Format Reporting](#interactive-html-dashboard--multi-format-reporting)
    - [Hierarchical Site Map Tree Visualizer](#hierarchical-site-map-tree-visualizer)
    - [Automated Security Assertions & Vulnerability Validations](#automated-security-assertions--vulnerability-validations)
+   - [Defensive Security Assessment & Compliance Baseline Engine](#defensive-security-assessment--compliance-baseline-engine)
    - [Network Diagnostics & Latency Metrics](#network-diagnostics--latency-metrics)
    - [Session Checkpoints & State Resumption](#session-checkpoints--state-resumption)
 5. [Installation & Requirements](#-installation--requirements)
@@ -123,6 +124,8 @@ The codebase is organized into cleanly separated single-responsibility modules:
 | **Route Harvester** | [`web_mapper/crawler.py`](web_mapper/crawler.py) | Extracts routes from `/robots.txt` (Disallow/Allow), `/sitemap.xml` (`<loc>`), and in-scope HTML links/scripts. |
 | **Site Map Visualizer** | [`web_mapper/sitemap.py`](web_mapper/sitemap.py) | Constructs an in-memory N-ary tree from discovered paths and renders formatted ASCII directory trees. |
 | **Reporter & Exporters** | [`web_mapper/reporter.py`](web_mapper/reporter.py) | Generates dark-themed interactive HTML reports, structured JSON data, CSV spreadsheets, Markdown documentation, and terminal tables. |
+| **Compliance Engine** | [`web_mapper/compliance.py`](web_mapper/compliance.py) | Audits application endpoints against OWASP ASVS v4.0, CIS Web Benchmarks, and NIST SP 800-53 Rev 5 baselines with compliance scoring. |
+| **Security Assertions** | [`web_mapper/security_assertions.py`](web_mapper/security_assertions.py) | Programmatically checks for improper access controls, backup leaks, dangerous verbs, and input injection surfaces. |
 | **Session Checkpoint** | [`web_mapper/checkpoint.py`](web_mapper/checkpoint.py) | Serializes scan state to disk for checkpointing and resuming long-running audits. |
 | **Network Diagnostics** | [`web_mapper/network_diag.py`](web_mapper/network_diag.py) | Resolves IPv4/IPv6 addresses, canonical CNAME records, reverse DNS hostnames, and measures TCP connect latency. |
 
@@ -193,6 +196,27 @@ WebAdminMapper includes an automated, non-destructive vulnerability assertion mo
 - **Dangerous HTTP Verbs & Tampering**: Detects `TRACE`/`TRACK` methods (enabling Cross-Site Tracing) and unauthenticated `PUT`/`DELETE` modification verbs.
 - **Verbose Banners & Information Leaks**: Inspects server version tokens, missing sensitive `Cache-Control: no-store` headers on APIs, and server-side stack traces.
 - **Injection Surface Mapping**: Catalogs active query parameters and input endpoints to map the attack surface safely without generating disruptive payloads.
+
+### Defensive Security Assessment & Compliance Baseline Engine
+Architected and developed by **Ahmed Wael**, WebAdminMapper provides an enterprise-grade defensive compliance engine ([`web_mapper/compliance.py`](web_mapper/compliance.py)) that programmatically audits discovered application endpoints and server configurations against three globally recognized security standards:
+1. **OWASP ASVS v4.0 (Application Security Verification Standard)**:
+   - *V1 Architecture & Threat Modeling*: Suppression of architectural footprint and dangerous debug interfaces.
+   - *V4 Access Control Verification*: Protection of privileged administrative routes, consoles, and actuator panels.
+   - *V5 Input Validation & Sanitization*: Detection and inventorying of dynamic parameter injection surfaces.
+   - *V8 Data Protection*: Identification of exposed environment variables (`.env`), database backups (`.sql`), private keys, and missing sensitive caching controls (`Cache-Control: no-store`).
+   - *V14 Server Configuration*: Enforcement of strict HTTPS transport (HSTS), Content-Security-Policy (CSP), Clickjacking framing defenses (X-Frame-Options), MIME sniffing protection (X-Content-Type-Options), and Origin restriction (CORS).
+2. **CIS Web Application & Server Configuration Benchmarks**:
+   - Web server banner and technology version suppression (`ServerTokens Prod`, `server_tokens off`).
+   - SCM repository access restriction (`.git`, `.svn`, `.hg`).
+   - Transport Layer Security configuration baseline and encryption posture.
+3. **NIST SP 800-53 Rev 5 (Security and Privacy Controls)**:
+   - *AC-3 & AC-6*: Access Enforcement and Least Privilege on administrative control surfaces.
+   - *SC-8 & SC-13*: Transmission Confidentiality and Cryptographic Protection over public networks.
+   - *SC-28*: Protection of Information at Rest against unauthorized backup disclosure.
+   - *SI-10*: Information Input Validation surface gating.
+   - *SI-11*: Error Handling and suppression of verbose system stack traces.
+
+The compliance engine computes a weighted compliance percentage (**0.0% – 100.0%**) and awards a normalized compliance letter grade (**A+ Compliant, A, B, C, D, or F Critical Non-Compliance**), breaking down passing and failing controls by standard. Every finding includes authoritative rule references, concrete endpoint evidence, and actionable defensive remediation instructions.
 
 ### Network Diagnostics & Latency Metrics
 Measures DNS resolution, reverse DNS hostnames, TCP handshake time, and statistical response latency distributions (**Min, Max, Mean, p50, p90, p99**).
@@ -265,6 +289,9 @@ webadminmapper -u https://example.com
 | | `--no-tree` | Flag | `False` | Disable rendering the ASCII directory tree. |
 | | `--audit-vulns` | Flag | `True` | Automated non-destructive security assertions & vulnerability validations. |
 | | `--no-vuln-validate` | Flag | `False` | Disable automated security assertions and vulnerability validation. |
+| | `--compliance` | Flag | `True` | Automated defensive security assessment & compliance baseline validation. |
+| | `--no-compliance` | Flag | `False` | Disable defensive compliance validation engine. |
+| | `--benchmark` | Choice | `all` | Compliance benchmark baseline: `all`, `owasp`, `cis`, or `nist`. |
 | | `--no-title` | Flag | `False` | Disable HTML page title extraction. |
 | **HTTP Customization** | | | | |
 | `-a` | `--user-agent` | String | *Default UA* | Custom HTTP User-Agent header. |
@@ -343,6 +370,16 @@ python3 main.py -u https://example.com -m admin -t 40 -r --depth 2 --save-profil
 python3 main.py --profile prod_audit.json -u https://staging.example.com
 ```
 
+### Scenario 8: Defensive Security Assessment & Compliance Audit
+```bash
+# Validate against OWASP ASVS v4.0 baseline and export HTML dashboard
+python3 main.py -u https://example.com --benchmark owasp -o owasp_report.html -f html
+
+# Full cross-standard audit (OWASP + CIS + NIST) with JSON export
+python3 main.py -u https://example.com --benchmark all -o enterprise_compliance.json -f json
+```
+*Evaluates administrative controls, sensitive file disclosures, transport encryption, and client header protections against industry baselines, computing a normalized compliance score and grade.*
+
 ---
 
 ## 🐍 Programmatic Python SDK Guide
@@ -356,16 +393,20 @@ from web_mapper import (
     HTTPRequester,
     CertInspector,
     SecurityAuditor,
+    SecurityAssertionValidator,
+    ComplianceEngine,
     RouteHarvester,
 )
 
-# 1. Configure the audit
+# 1. Configure the audit with compliance checks enabled
 config = ScanConfig(
     target_url="https://example.com",
     threads=30,
     wordlist_type="admin",
     recursive=True,
     max_depth=2,
+    compliance_check=True,
+    compliance_benchmark="all",  # 'all', 'owasp', 'cis', 'nist'
     output_file="audit_report.json",
     output_format="json",
 )
@@ -385,10 +426,16 @@ def on_result(result):
 
 results = engine.run(on_result=on_result, extra_seed_paths=crawled_paths)
 
-# 5. Evaluate defensive security headers
-if requester.base_headers:
-    audit = SecurityAuditor().audit(config.target_url, requester.base_headers)
-    print(f"Defensive Posture Grade: {audit.grade} ({audit.score}/100)")
+# 5. Evaluate defensive compliance against OWASP ASVS, CIS, and NIST
+comp_engine = ComplianceEngine(benchmark=config.compliance_benchmark)
+comp_report = comp_engine.evaluate(
+    results=results,
+    base_headers=requester.base_headers,
+    target_url=config.target_url,
+)
+print(f"Compliance Grade: {comp_report.compliance_grade} ({comp_report.compliance_score:.1f}%)")
+for finding in comp_report.findings:
+    print(f"[{finding.severity}] {finding.rule_id} ({finding.benchmark}): {finding.title} on {finding.endpoint}")
 ```
 
 ---
@@ -406,9 +453,9 @@ python3 -m unittest discover tests
 
 Output:
 ```
-............................
+........................................
 ----------------------------------------------------------------------
-Ran 28 tests in 0.041s
+Ran 40 tests in 0.038s
 
 OK
 ```

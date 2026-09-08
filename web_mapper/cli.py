@@ -17,6 +17,7 @@ from typing import List, Optional, Set
 
 from .cert_inspector import CertificateInfo, CertInspector
 from .checkpoint import SessionCheckpoint
+from .compliance import ComplianceEngine, ComplianceFinding, ComplianceReport
 from .config import DEFAULT_FILTER_CODES, DEFAULT_MATCH_CODES, ScanConfig
 from .crawler import RouteHarvester
 from .engine import ExecutionEngine
@@ -326,6 +327,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable automated security assertions and vulnerability validation",
     )
     heur_group.add_argument(
+        "--compliance",
+        dest="compliance",
+        action="store_true",
+        default=True,
+        help="Perform automated defensive security assessment and compliance baseline validation (default: enabled)",
+    )
+    heur_group.add_argument(
+        "--no-compliance",
+        dest="no_compliance",
+        action="store_true",
+        help="Disable defensive security compliance validation engine",
+    )
+    heur_group.add_argument(
+        "--benchmark",
+        dest="benchmark",
+        type=str,
+        choices=["all", "owasp", "cis", "nist"],
+        default="all",
+        help="Compliance benchmark baseline to validate against (choices: all, owasp, cis, nist; default: all)",
+    )
+    heur_group.add_argument(
         "--no-title",
         dest="no_title",
         action="store_true",
@@ -575,6 +597,16 @@ def run_scanner(config: ScanConfig) -> int:
         validator = SecurityAssertionValidator()
         security_assertions = validator.validate_all(results)
 
+    # Defensive Security Assessment & Compliance Baseline Validation
+    compliance_report: Optional[ComplianceReport] = None
+    if config.compliance_check:
+        comp_engine = ComplianceEngine(benchmark=config.compliance_benchmark)
+        compliance_report = comp_engine.evaluate(
+            results=results,
+            base_headers=requester.base_headers,
+            target_url=config.target_url,
+        )
+
     # Summary
     if not config.quiet:
         reporter.print_summary(
@@ -588,6 +620,7 @@ def run_scanner(config: ScanConfig) -> int:
             cert_info=cert_info,
             network_diag=network_diag,
             security_assertions=security_assertions,
+            compliance_report=compliance_report,
             crawled_routes_count=len(harvested_routes),
         )
 
@@ -603,6 +636,7 @@ def run_scanner(config: ScanConfig) -> int:
             cert_info=cert_info,
             network_diag=network_diag,
             security_assertions=security_assertions,
+            compliance_report=compliance_report,
         )
         if out_saved and not config.quiet:
             print(f"  {Colors.GREEN}[+] Report successfully exported to:{Colors.RESET} {out_saved}")
@@ -637,6 +671,10 @@ def main() -> None:
                 config.checkpoint_file = args.checkpoint
             if args.resume:
                 config.resume_checkpoint = args.resume
+            if args.no_compliance:
+                config.compliance_check = False
+            if args.benchmark and args.benchmark != "all":
+                config.compliance_benchmark = args.benchmark
         except Exception as exc:
             print(f"{Colors.RED}Profile Load Error: {exc}{Colors.RESET}")
             sys.exit(1)
@@ -705,6 +743,8 @@ def main() -> None:
                 cert_inspect=not args.no_cert,
                 network_diag=not args.no_net_diag,
                 validate_vulns=not args.no_vuln_validate,
+                compliance_check=not args.no_compliance,
+                compliance_benchmark=args.benchmark,
                 checkpoint_file=args.checkpoint,
                 resume_checkpoint=args.resume,
             )
