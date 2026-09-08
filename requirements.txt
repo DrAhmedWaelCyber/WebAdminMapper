@@ -1,0 +1,9 @@
+# WebAdminMapper - Requirements
+# Developer & Author: Ahmed Wael
+#
+# WebAdminMapper is built using Python's standard library
+# (urllib, http.client, concurrent.futures, ssl, argparse, etc.)
+# and requires ZERO external runtime dependencies to operate out of the box!
+#
+# Optional testing & development dependencies:
+pytest>=7.0.0
