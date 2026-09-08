@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from .config import ScanConfig
 from .fingerprint import TechProfiler
 from .heuristics import Soft404Detector, WAFDetector, compute_words_and_lines
+from .rate_limiter import RateLimiter
 
 
 __author__ = "Ahmed Wael"
@@ -117,19 +118,27 @@ class HTTPRequester:
     Authored and designed by Ahmed Wael.
     """
 
-    def __init__(self, config: ScanConfig):
+    def __init__(self, config: ScanConfig, opener: Optional[urllib.request.OpenerDirector] = None):
         self.config = config
-        self._opener = self._build_opener()
+        self._opener = opener if opener is not None else self._build_opener()
         self.profiler = TechProfiler()
         self.soft404 = Soft404Detector()
         self.waf_detector = WAFDetector()
         self.discovered_techs: List[str] = []
         self.detected_waf: Optional[str] = None
         self.base_headers: Dict[str, str] = {}
+        self.rate_limiter = RateLimiter(
+            rate_limit=self.config.rate_limit,
+            delay=self.config.delay,
+            jitter=self.config.jitter,
+        )
         self.error_counts: Dict[str, int] = {
             "timeouts": 0,
             "ssl_errors": 0,
             "connection_errors": 0,
+            "network_errors": 0,
+            "http_parsing_errors": 0,
+            "invalid_input_errors": 0,
             "unexpected_errors": 0,
         }
 
@@ -223,13 +232,44 @@ class HTTPRequester:
         except urllib.error.HTTPError as err:
             try:
                 body = err.read()
-            except Exception:
+            except (http.client.HTTPException, socket.timeout, ConnectionError, OSError):
                 body = b""
             finally:
                 err.close()
             title = self._extract_title(body)
             return (err.code, body, title)
-        except Exception:
+        except (socket.timeout, TimeoutError):
+            self.error_counts["timeouts"] += 1
+            return None
+        except (ssl.SSLError, ssl.CertificateError):
+            self.error_counts["ssl_errors"] += 1
+            return None
+        except (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError):
+            self.error_counts["connection_errors"] += 1
+            return None
+        except (urllib.error.URLError, http.client.RemoteDisconnected, BrokenPipeError, ConnectionError, OSError) as err:
+            reason = getattr(err, "reason", None)
+            if isinstance(reason, (socket.timeout, TimeoutError)):
+                self.error_counts["timeouts"] += 1
+            elif (
+                isinstance(reason, (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError))
+                or "connection refused" in str(reason).lower()
+                or "connection refused" in str(err).lower()
+            ):
+                self.error_counts["connection_errors"] += 1
+            else:
+                self.error_counts["network_errors"] += 1
+            return None
+        except (http.client.HTTPException, http.client.BadStatusLine, http.client.IncompleteRead):
+            self.error_counts["http_parsing_errors"] += 1
+            return None
+        except (ValueError, TypeError, re.error):
+            self.error_counts["invalid_input_errors"] += 1
+            return None
+        except Exception as err:
+            self.error_counts["unexpected_errors"] += 1
+            import sys
+            sys.stderr.write(f"[WebAdminMapper Requester] Baseline probe error for {path}: {type(err).__name__}: {err}\n")
             return None
 
     def _extract_title(self, body: bytes) -> Optional[str]:
@@ -241,7 +281,7 @@ class HTTPRequester:
             match = TITLE_REGEX.search(sample)
             if match:
                 return " ".join(match.group(1).split()).strip()
-        except Exception:
+        except (ValueError, TypeError, re.error):
             pass
         return None
 
@@ -253,8 +293,8 @@ class HTTPRequester:
         clean_path = "/" + path.lstrip("/")
         full_url = f"{self.config.target_url}{clean_path}"
 
-        if self.config.delay > 0:
-            time.sleep(self.config.delay)
+        # Rate limiting, fixed delay, and timing jitter control
+        self.rate_limiter.wait()
 
         attempts = 0
         max_attempts = max(1, self.config.retries + 1)
@@ -279,7 +319,7 @@ class HTTPRequester:
                 headers = dict(err.headers)
                 try:
                     err_body = err.read()
-                except Exception:
+                except (http.client.HTTPException, socket.timeout, ConnectionError, OSError):
                     err_body = b""
                 finally:
                     err.close()
@@ -287,25 +327,56 @@ class HTTPRequester:
                     clean_path, full_url, status_code, headers, err_body, elapsed_ms
                 )
 
-            except (socket.timeout, TimeoutError) as err:
+            except (socket.timeout, TimeoutError):
                 if attempts < max_attempts:
                     continue
                 self.error_counts["timeouts"] += 1
                 return None
-            except (ssl.SSLError, ssl.CertificateError) as err:
+            except (ssl.SSLError, ssl.CertificateError):
                 if attempts < max_attempts:
                     continue
                 self.error_counts["ssl_errors"] += 1
                 return None
-            except (urllib.error.URLError, http.client.RemoteDisconnected, ConnectionError) as err:
+            except (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError):
                 if attempts < max_attempts:
                     continue
                 self.error_counts["connection_errors"] += 1
                 return None
+            except (urllib.error.URLError, http.client.RemoteDisconnected, BrokenPipeError, ConnectionError, OSError) as err:
+                reason = getattr(err, "reason", None)
+                if isinstance(reason, (socket.timeout, TimeoutError)):
+                    if attempts < max_attempts:
+                        continue
+                    self.error_counts["timeouts"] += 1
+                    return None
+                if (
+                    isinstance(reason, (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError))
+                    or "connection refused" in str(reason).lower()
+                    or "connection refused" in str(err).lower()
+                ):
+                    if attempts < max_attempts:
+                        continue
+                    self.error_counts["connection_errors"] += 1
+                    return None
+                if attempts < max_attempts:
+                    continue
+                self.error_counts["network_errors"] += 1
+                return None
+            except (http.client.HTTPException, http.client.BadStatusLine, http.client.IncompleteRead):
+                if attempts < max_attempts:
+                    continue
+                self.error_counts["http_parsing_errors"] += 1
+                return None
+            except (ValueError, TypeError, re.error):
+                self.error_counts["invalid_input_errors"] += 1
+                return None
             except Exception as err:
                 self.error_counts["unexpected_errors"] += 1
-                import sys
-                sys.stderr.write(f"[WebAdminMapper Requester] Warning: Unexpected error requesting {full_url}: {type(err).__name__}: {err}\n")
+                import sys, traceback
+                sys.stderr.write(
+                    f"[WebAdminMapper Requester] Warning: Unexpected error requesting {full_url}: "
+                    f"{type(err).__name__}: {err}\n{traceback.format_exc()}\n"
+                )
                 return None
 
         return None
@@ -324,7 +395,7 @@ class HTTPRequester:
         if content_length == 0 and "Content-Length" in headers:
             try:
                 content_length = int(headers["Content-Length"])
-            except Exception:
+            except (ValueError, TypeError):
                 pass
 
         # Text calculations
@@ -430,11 +501,39 @@ class HTTPRequester:
             headers = dict(err.headers)
             try:
                 body = err.read()
-            except Exception:
+            except (http.client.HTTPException, socket.timeout, ConnectionError, OSError):
                 body = b""
             finally:
                 err.close()
-        except Exception:
+        except (socket.timeout, TimeoutError):
+            self.error_counts["timeouts"] += 1
+            return None
+        except (ssl.SSLError, ssl.CertificateError):
+            self.error_counts["ssl_errors"] += 1
+            return None
+        except (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError):
+            self.error_counts["connection_errors"] += 1
+            return None
+        except (urllib.error.URLError, http.client.RemoteDisconnected, BrokenPipeError, ConnectionError, OSError) as err:
+            reason = getattr(err, "reason", None)
+            if isinstance(reason, (socket.timeout, TimeoutError)):
+                self.error_counts["timeouts"] += 1
+            else:
+                self.error_counts["network_errors"] += 1
+            return None
+        except (http.client.HTTPException, http.client.BadStatusLine, http.client.IncompleteRead):
+            self.error_counts["http_parsing_errors"] += 1
+            return None
+        except (ValueError, TypeError, re.error):
+            self.error_counts["invalid_input_errors"] += 1
+            return None
+        except Exception as err:
+            self.error_counts["unexpected_errors"] += 1
+            import sys, traceback
+            sys.stderr.write(
+                f"[WebAdminMapper Requester] Unexpected error connecting to base URL {full_url}: "
+                f"{type(err).__name__}: {err}\n{traceback.format_exc()}\n"
+            )
             return None
 
         text = body.decode("utf-8", errors="ignore") if body else ""

@@ -182,6 +182,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delay in seconds between requests per thread for rate-limiting (default: 0.0)",
     )
     net_group.add_argument(
+        "--jitter",
+        dest="jitter",
+        type=float,
+        default=0.0,
+        help="Random timing variance in seconds [0.0, jitter] added to request delay (default: 0.0)",
+    )
+    net_group.add_argument(
+        "--rate-limit",
+        dest="rate_limit",
+        type=float,
+        default=0.0,
+        help="Maximum allowed requests per second across all worker threads (0.0 = unlimited)",
+    )
+    net_group.add_argument(
         "--retries",
         dest="retries",
         type=int,
@@ -495,7 +509,7 @@ def run_scanner(config: ScanConfig) -> int:
             initial_results = SessionCheckpoint.deserialize_results(chk_data.get("results", []))
             if not config.quiet:
                 print(f"  {Colors.GREEN}[+] Resumed From Checkpoint:{Colors.RESET} {len(initial_completed)} completed paths, {len(initial_results)} findings loaded")
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             print(f"  {Colors.RED}[!] Checkpoint Load Failed  :{Colors.RESET} {exc}")
 
     # Baseline & Heuristics Calibration
@@ -657,7 +671,7 @@ def main() -> None:
         try:
             chk_data = SessionCheckpoint.load(args.resume)
             args.url = chk_data.get("metadata", {}).get("target_url")
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             print(f"{Colors.RED}Checkpoint Load Error: {exc}{Colors.RESET}")
             sys.exit(1)
 
@@ -675,7 +689,7 @@ def main() -> None:
                 config.compliance_check = False
             if args.benchmark and args.benchmark != "all":
                 config.compliance_benchmark = args.benchmark
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
             print(f"{Colors.RED}Profile Load Error: {exc}{Colors.RESET}")
             sys.exit(1)
     else:
@@ -705,6 +719,8 @@ def main() -> None:
                 threads=args.threads,
                 timeout=args.timeout,
                 delay=args.delay,
+                jitter=args.jitter,
+                rate_limit=args.rate_limit,
                 retries=args.retries,
                 user_agent=args.user_agent or ScanConfig.user_agent,
                 headers=parse_headers_list(args.headers),
@@ -748,7 +764,7 @@ def main() -> None:
                 checkpoint_file=args.checkpoint,
                 resume_checkpoint=args.resume,
             )
-        except Exception as exc:
+        except (ValueError, TypeError, KeyError) as exc:
             print(f"{Colors.RED}Configuration Error: {exc}{Colors.RESET}")
             sys.exit(1)
 
@@ -757,7 +773,7 @@ def main() -> None:
         try:
             config.save_profile(args.save_profile)
             print(f"{Colors.GREEN}[+] Configuration profile saved to: {args.save_profile}{Colors.RESET}")
-        except Exception as exc:
+        except (OSError, ValueError, TypeError) as exc:
             print(f"{Colors.RED}Profile Save Error: {exc}{Colors.RESET}")
             sys.exit(1)
 

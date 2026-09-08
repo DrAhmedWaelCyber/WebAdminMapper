@@ -249,6 +249,28 @@ class TestComplianceEngine(unittest.TestCase):
             self.assertTrue(hasattr(rule, "limitations"), f"Rule {rule_id} missing limitations attr")
             self.assertGreater(len(rule.limitations), 10, f"Rule {rule_id} limitations string is too short or empty")
 
+    def test_all_rules_have_detection_logic(self):
+        """Verify that every catalogued compliance rule specifies documented detection logic."""
+        for rule_id, rule in self.engine_all.rules.items():
+            self.assertTrue(hasattr(rule, "detection_logic"), f"Rule {rule_id} missing detection_logic attr")
+            self.assertGreater(len(rule.detection_logic), 10, f"Rule {rule_id} detection_logic string is too short or empty")
+
+        # Also verify in evaluation findings
+        results = [
+            ScanResult(
+                path="/admin",
+                url="https://example.com/admin",
+                status_code=200,
+                content_length=500,
+                response_time_ms=20.0,
+            )
+        ]
+        report = self.engine_all.evaluate(results=results, base_headers={}, target_url="https://example.com")
+        for finding in report.findings:
+            self.assertTrue(hasattr(finding, "detection_logic"))
+            self.assertGreater(len(finding.detection_logic), 10)
+            self.assertIn("detection_logic", finding.to_dict())
+
 
 if __name__ == "__main__":
     unittest.main()

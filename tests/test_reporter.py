@@ -130,6 +130,66 @@ class TestScanReporter(unittest.TestCase):
             md_text = md_file.read_text(encoding="utf-8")
             self.assertIn("Defensive Security Assessment & Compliance Baseline Audit", md_text)
             self.assertIn("OWASP-ASVS", md_text)
+            self.assertIn("Detection Logic", md_text)
+
+    def test_export_security_assertions_and_csv(self):
+        from web_mapper.security_assertions import SecurityAssertionValidator
+
+        assertion_engine = SecurityAssertionValidator()
+        assertions = assertion_engine.validate_all(self.sample_results)
+        self.assertGreater(len(assertions), 0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # 1. JSON Export verification
+            json_file = Path(tmpdir) / "report.json"
+            cfg_json = ScanConfig(target_url="https://example.com", output_file=str(json_file), output_format="json")
+            rep_json = ScanReporter(cfg_json)
+            rep_json.export_results(results=self.sample_results, duration_sec=1.0, security_assertions=assertions)
+            with open(json_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            self.assertEqual(data["metadata"]["version"], "1.1.0")
+            self.assertGreater(len(data["metadata"]["security_assertions"]), 0)
+            first_assertion = data["metadata"]["security_assertions"][0]
+            self.assertIn("classification", first_assertion)
+            self.assertIn("confidence", first_assertion)
+            self.assertIn("impact", first_assertion)
+            self.assertIn("manual_verification_required", first_assertion)
+
+            # 2. HTML Export verification
+            html_file = Path(tmpdir) / "report.html"
+            cfg_html = ScanConfig(target_url="https://example.com", output_file=str(html_file), output_format="html")
+            rep_html = ScanReporter(cfg_html)
+            rep_html.export_results(results=self.sample_results, duration_sec=1.0, security_assertions=assertions)
+            html_text = html_file.read_text(encoding="utf-8")
+            self.assertIn("Automated Security Assertions", html_text)
+            self.assertIn("Classification", html_text)
+            self.assertIn("Confidence", html_text)
+            self.assertIn("Impact", html_text)
+            self.assertIn("Manual Verif.", html_text)
+
+            # 3. Markdown Export verification
+            md_file = Path(tmpdir) / "report.md"
+            cfg_md = ScanConfig(target_url="https://example.com", output_file=str(md_file), output_format="markdown")
+            rep_md = ScanReporter(cfg_md)
+            rep_md.export_results(results=self.sample_results, duration_sec=1.0, security_assertions=assertions)
+            md_text = md_file.read_text(encoding="utf-8")
+            self.assertIn("Automated Security Assertions & Vulnerability Validations", md_text)
+            self.assertIn("Classification", md_text)
+            self.assertIn("Impact", md_text)
+
+            # 4. CSV Export verification
+            csv_file = Path(tmpdir) / "report.csv"
+            cfg_csv = ScanConfig(target_url="https://example.com", output_file=str(csv_file), output_format="csv")
+            rep_csv = ScanReporter(cfg_csv)
+            rep_csv.export_results(results=self.sample_results, duration_sec=1.0, security_assertions=assertions)
+            self.assertTrue(csv_file.exists())
+            assertions_csv = Path(tmpdir) / "report_assertions.csv"
+            self.assertTrue(assertions_csv.exists())
+            csv_text = assertions_csv.read_text(encoding="utf-8")
+            self.assertIn("classification", csv_text)
+            self.assertIn("confidence", csv_text)
+            self.assertIn("impact", csv_text)
+            self.assertIn("manual_verification_required", csv_text)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ Copyright (c) 2026, Ahmed Wael. All rights reserved.
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Set
 
 from .requester import ScanResult
 

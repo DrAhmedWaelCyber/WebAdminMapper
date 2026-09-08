@@ -36,6 +36,8 @@ class ScanConfig:
     threads: int = 25
     timeout: float = 7.0
     delay: float = 0.0
+    jitter: float = 0.0
+    rate_limit: float = 0.0
     retries: int = 1
     user_agent: str = DEFAULT_USER_AGENT
     headers: Dict[str, str] = field(default_factory=dict)
@@ -124,6 +126,10 @@ class ScanConfig:
             raise ValueError("Timeout must be greater than 0.")
         if self.delay < 0:
             raise ValueError("Delay cannot be negative.")
+        if self.jitter < 0:
+            raise ValueError("Jitter cannot be negative.")
+        if self.rate_limit < 0:
+            raise ValueError("Rate limit cannot be negative.")
         if self.max_depth < 1:
             raise ValueError("Recursion depth must be at least 1.")
 
@@ -149,6 +155,8 @@ class ScanConfig:
             "threads": self.threads,
             "timeout": self.timeout,
             "delay": self.delay,
+            "jitter": self.jitter,
+            "rate_limit": self.rate_limit,
             "retries": self.retries,
             "user_agent": self.user_agent,
             "headers": self.headers,

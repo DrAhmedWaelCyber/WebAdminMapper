@@ -10,6 +10,7 @@ Copyright (c) 2026, Ahmed Wael. All rights reserved.
 
 import http.client
 import os
+import re
 import socket
 import ssl
 import sys
@@ -49,6 +50,9 @@ class ExecutionEngine:
             "timeouts": 0,
             "ssl_errors": 0,
             "connection_errors": 0,
+            "network_errors": 0,
+            "http_parsing_errors": 0,
+            "invalid_input_errors": 0,
             "unexpected_errors": 0,
         }
 
@@ -120,20 +124,40 @@ class ExecutionEngine:
 
                         try:
                             res = future.result()
-                        except (socket.timeout, TimeoutError) as exc:
+                        except (socket.timeout, TimeoutError):
                             self.error_stats["timeouts"] += 1
                             res = None
-                        except (ssl.SSLError, ssl.CertificateError) as exc:
+                        except (ssl.SSLError, ssl.CertificateError):
                             self.error_stats["ssl_errors"] += 1
                             res = None
-                        except (urllib.error.URLError, ConnectionError, http.client.RemoteDisconnected) as exc:
+                        except (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError):
                             self.error_stats["connection_errors"] += 1
+                            res = None
+                        except (urllib.error.URLError, http.client.RemoteDisconnected, BrokenPipeError, ConnectionError, OSError) as exc:
+                            reason = getattr(exc, "reason", None)
+                            if isinstance(reason, (socket.timeout, TimeoutError)):
+                                self.error_stats["timeouts"] += 1
+                            elif (
+                                isinstance(reason, (ConnectionRefusedError, ConnectionResetError, ConnectionAbortedError))
+                                or "connection refused" in str(reason).lower()
+                                or "connection refused" in str(exc).lower()
+                            ):
+                                self.error_stats["connection_errors"] += 1
+                            else:
+                                self.error_stats["network_errors"] += 1
+                            res = None
+                        except (http.client.HTTPException, http.client.BadStatusLine, http.client.IncompleteRead):
+                            self.error_stats["http_parsing_errors"] += 1
+                            res = None
+                        except (ValueError, TypeError, re.error):
+                            self.error_stats["invalid_input_errors"] += 1
                             res = None
                         except Exception as exc:
                             self.error_stats["unexpected_errors"] += 1
+                            import sys, traceback
                             sys.stderr.write(
                                 f"[WebAdminMapper Engine] Warning: Unexpected exception during probe of {path}: "
-                                f"{type(exc).__name__}: {exc}\n"
+                                f"{type(exc).__name__}: {exc}\n{traceback.format_exc()}\n"
                             )
                             res = None
 

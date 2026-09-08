@@ -30,6 +30,7 @@ from .fingerprint import TechProfiler
 from .generator import PathGenerator
 from .heuristics import Soft404Detector, WAFDetector
 from .network_diag import NetworkDiagnostics, NetworkDiagResult
+from .rate_limiter import RateLimiter
 from .reporter import ScanReporter
 from .requester import HTTPRequester, ScanResult
 from .security_assertions import SecurityAssertion, SecurityAssertionValidator
@@ -62,5 +63,6 @@ __all__ = [
     "RouteHarvester",
     "NetworkDiagnostics",
     "NetworkDiagResult",
+    "RateLimiter",
     "SessionCheckpoint",
 ]

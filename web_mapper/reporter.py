@@ -15,10 +15,10 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 
 from .cert_inspector import CertificateInfo
-from .compliance import ComplianceFinding, ComplianceReport
+from .compliance import ComplianceReport
 from .config import ScanConfig
 from .network_diag import NetworkDiagResult
 from .requester import ScanResult
@@ -216,7 +216,7 @@ class ScanReporter:
         elif fmt == "json":
             self._save_json(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions, compliance_report)
         elif fmt == "csv":
-            self._save_csv(out_path, results)
+            self._save_csv(out_path, results, security_assertions, compliance_report)
         elif fmt == "markdown":
             self._save_markdown(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions, compliance_report)
         else:
@@ -242,7 +242,7 @@ class ScanReporter:
             "metadata": {
                 "author": __author__,
                 "tool": "WebAdminMapper",
-                "version": "1.0.0",
+                "version": "1.1.0",
                 "target": self.config.target_url,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "duration_seconds": round(duration_sec, 2),
@@ -262,7 +262,13 @@ class ScanReporter:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
-    def _save_csv(self, path: Path, results: List[ScanResult]) -> None:
+    def _save_csv(
+        self,
+        path: Path,
+        results: List[ScanResult],
+        security_assertions: Optional[List[SecurityAssertion]] = None,
+        compliance_report: Optional[ComplianceReport] = None,
+    ) -> None:
         fieldnames = [
             "path",
             "url",
@@ -278,13 +284,66 @@ class ScanReporter:
             "timestamp",
         ]
         with open(path, "w", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             for r in results:
                 row = r.to_dict()
                 row.pop("author", None)
                 row.pop("waf_detected", None)
                 row.pop("technologies", None)
+                writer.writerow(row)
+
+        if security_assertions:
+            assertions_path = path.with_name(f"{path.stem}_assertions.csv")
+            self._save_assertions_csv(assertions_path, security_assertions)
+
+        if compliance_report and compliance_report.findings:
+            compliance_path = path.with_name(f"{path.stem}_compliance.csv")
+            self._save_compliance_csv(compliance_path, compliance_report)
+
+    def _save_assertions_csv(self, path: Path, security_assertions: List[SecurityAssertion]) -> None:
+        fieldnames = [
+            "rule_id",
+            "severity",
+            "classification",
+            "confidence",
+            "category",
+            "title",
+            "description",
+            "endpoint",
+            "evidence",
+            "impact",
+            "manual_verification_required",
+            "remediation",
+        ]
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for a in security_assertions:
+                row = a.to_dict()
+                row.pop("author", None)
+                writer.writerow(row)
+
+    def _save_compliance_csv(self, path: Path, compliance_report: ComplianceReport) -> None:
+        fieldnames = [
+            "rule_id",
+            "benchmark",
+            "category",
+            "severity",
+            "status",
+            "title",
+            "endpoint",
+            "evidence",
+            "detection_logic",
+            "limitations",
+            "remediation",
+        ]
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for cf in compliance_report.findings:
+                row = cf.to_dict()
+                row.pop("author", None)
                 writer.writerow(row)
 
     def _save_markdown(
@@ -333,18 +392,21 @@ class ScanReporter:
                     bm_line = " | ".join(f"{k}: {v}%" for k, v in compliance_report.benchmark_scores.items())
                     f.write(f"- **Benchmark Breakdown:** {bm_line}\n")
                 if compliance_report.findings:
-                    f.write("\n| Rule ID | Benchmark | Severity | Status | Control Title | Endpoint | Evidence | Limitations | Remediation |\n")
-                    f.write("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
+                    f.write("\n| Rule ID | Benchmark | Severity | Status | Control Title | Endpoint | Evidence | Detection Logic | Limitations | Remediation |\n")
+                    f.write("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
                     for cf in compliance_report.findings:
                         lim = getattr(cf, "limitations", "") or "N/A"
-                        f.write(f"| `{cf.rule_id}` | {cf.benchmark} | `{cf.severity}` | `{cf.status}` | **{cf.title}** | `{cf.endpoint}` | {cf.evidence} | {lim} | {cf.remediation} |\n")
+                        det = getattr(cf, "detection_logic", "") or "N/A"
+                        f.write(f"| `{cf.rule_id}` | {cf.benchmark} | `{cf.severity}` | `{cf.status}` | **{cf.title}** | `{cf.endpoint}` | {cf.evidence} | {det} | {lim} | {cf.remediation} |\n")
 
             if security_assertions:
                 f.write("\n### Automated Security Assertions & Vulnerability Validations\n\n")
-                f.write("| Severity | Category | Assertion / Finding | Endpoint | Remediation |\n")
-                f.write("| :--- | :--- | :--- | :--- | :--- |\n")
+                f.write("| Severity | Classification | Confidence | Category | Assertion / Finding | Endpoint | Evidence | Impact | Manual Verif. | Remediation |\n")
+                f.write("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
                 for a in security_assertions:
-                    f.write(f"| `{a.severity}` | {a.category} | **{a.title}** | `{a.endpoint}` | {a.remediation} |\n")
+                    m_ver = "Yes" if a.manual_verification_required else "No"
+                    conf_disp = f"{a.confidence:.2f}" if isinstance(a.confidence, (int, float)) else str(a.confidence)
+                    f.write(f"| `{a.severity}` | {a.classification} | {conf_disp} | {a.category} | **{a.title}** | `{a.endpoint}` | {a.evidence} | {a.impact} | {m_ver} | {a.remediation} |\n")
 
             f.write("\n## Discovered Endpoints\n\n")
             f.write("| Status | Size | Words | Time | Path | Title / Redirect |\n")
@@ -429,6 +491,7 @@ class ScanReporter:
                 for cf in compliance_report.findings:
                     badge = "st-5xx" if cf.severity == "HIGH" else "st-4xx" if cf.severity == "MEDIUM" else "st-3xx"
                     lim_text = getattr(cf, "limitations", "") or "N/A"
+                    det_logic = getattr(cf, "detection_logic", "") or "N/A"
                     cf_rows.append(f"""
                     <tr>
                       <td><code>{html.escape(cf.rule_id)}</code></td>
@@ -437,6 +500,7 @@ class ScanReporter:
                       <td><strong>{html.escape(cf.title)}</strong></td>
                       <td><code>{html.escape(cf.endpoint)}</code></td>
                       <td><span style="font-size: 12px; color: #8b949e;">{html.escape(cf.evidence)}</span></td>
+                      <td><span style="font-size: 12px; color: #79c0ff;">{html.escape(det_logic)}</span></td>
                       <td><span style="font-size: 12px; color: #8b949e;">{html.escape(lim_text)}</span></td>
                       <td><code style="color: #7ee787;">{html.escape(cf.remediation)}</code></td>
                     </tr>
@@ -463,6 +527,7 @@ class ScanReporter:
                         <th>Control Title</th>
                         <th>Endpoint</th>
                         <th>Evidence</th>
+                        <th>Detection Logic</th>
                         <th>Limitations</th>
                         <th>Defensive Remediation</th>
                       </tr>
@@ -496,13 +561,20 @@ class ScanReporter:
             a_rows = []
             for a in security_assertions:
                 badge = "st-5xx" if a.severity == "HIGH" else "st-4xx" if a.severity == "MEDIUM" else "st-3xx"
+                class_badge = "st-2xx" if a.classification == "Confirmed Observation" else "st-3xx" if a.classification == "Potential Finding" else "badge-tech"
+                m_badge = '<span class="badge st-5xx">Yes</span>' if a.manual_verification_required else '<span class="badge st-2xx">No</span>'
+                conf_str = f"{a.confidence * 100:.0f}%" if isinstance(a.confidence, (int, float)) else str(a.confidence)
                 a_rows.append(f"""
                 <tr>
                   <td><span class="badge {badge}">{a.severity}</span></td>
+                  <td><span class="badge {class_badge}">{html.escape(a.classification)}</span></td>
+                  <td><strong>{html.escape(conf_str)}</strong></td>
                   <td><strong>{html.escape(a.category)}</strong></td>
                   <td><strong>{html.escape(a.title)}</strong><br><span style="font-size: 12px; color: #8b949e;">{html.escape(a.description)}</span></td>
                   <td><code>{html.escape(a.endpoint)}</code></td>
                   <td><span style="font-size: 12px; color: #8b949e;">{html.escape(a.evidence)}</span></td>
+                  <td><span style="font-size: 12px; color: #d29922;">{html.escape(a.impact)}</span></td>
+                  <td>{m_badge}</td>
                   <td><code style="color: #7ee787;">{html.escape(a.remediation)}</code></td>
                 </tr>
                 """)
@@ -515,10 +587,14 @@ class ScanReporter:
                 <thead>
                   <tr>
                     <th>Severity</th>
+                    <th>Classification</th>
+                    <th>Confidence</th>
                     <th>Category</th>
                     <th>Assertion / Finding</th>
                     <th>Endpoint</th>
                     <th>Evidence</th>
+                    <th>Impact</th>
+                    <th>Manual Verif.</th>
                     <th>Remediation</th>
                   </tr>
                 </thead>

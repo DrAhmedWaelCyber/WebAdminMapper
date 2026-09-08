@@ -124,7 +124,7 @@ class TechProfiler:
                 for pattern, tech in BODY_SIGNATURES:
                     if pattern.search(decoded):
                         self.detected.add(tech)
-            except Exception:
+            except (UnicodeDecodeError, ValueError, TypeError, re.error):
                 pass
 
         return sorted(list(self.detected))

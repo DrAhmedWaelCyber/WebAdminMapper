@@ -10,7 +10,7 @@ Copyright (c) 2026, Ahmed Wael. All rights reserved.
 
 import sys
 from pathlib import Path
-from typing import Generator, List, Optional, Set
+from typing import Generator, List, Set
 
 from .config import ScanConfig
 from .wordlists import (
@@ -47,7 +47,7 @@ class PathGenerator:
                     stripped = line.strip()
                     if stripped and not stripped.startswith("#"):
                         lines.append(stripped)
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             pass
         return lines
 

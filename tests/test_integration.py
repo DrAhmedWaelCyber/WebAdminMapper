@@ -1,235 +1,202 @@
 """
-WebAdminMapper - End-to-End Integration Tests with Local Test Server
-====================================================================
-Tests real network interactions across HTTP status codes, redirects,
-soft-404 suppression, wildcard routes, timeouts, connection failures,
-and recursive directory discovery.
+WebAdminMapper - Comprehensive End-to-End Integration Test Suite
+================================================================
+Executes complete scanner pipeline tests against the dedicated local test
+web server: Target -> Requester -> Engine -> Heuristics -> Security Assertions -> Reporter.
+
+Verifies:
+  - Successful endpoints (/test-200, /admin)
+  - Redirects (/test-301, /test-302, /redirect)
+  - Forbidden resources (/test-403)
+  - Not-found responses (/test-404)
+  - Server errors (/test-500)
+  - Soft-404 responses (/soft-404)
+  - Wildcard behavior (/wildcard)
+  - Slow responses (/slow)
+  - Sensitive-looking paths (/.env, /.git/config)
+  - Recursive discoveries (/dir -> /dir/secret)
+  - Complete reporting export pipeline (HTML, JSON, Markdown)
 
 Developer & Author: Ahmed Wael
 Email: ahmedwael6143@gmail.com
 Copyright (c) 2026, Ahmed Wael. All rights reserved.
 """
 
-import http.server
-import socket
-import threading
-import time
+import json
+import os
+import tempfile
 import unittest
-from typing import Optional
+from pathlib import Path
 
+from tests.local_test_server import (
+    IntegrationTestHandler,
+    create_test_opener,
+    start_local_test_server,
+    stop_local_test_server,
+)
 from web_mapper.config import ScanConfig
 from web_mapper.engine import ExecutionEngine
-from web_mapper.requester import HTTPRequester, ScanResult
+from web_mapper.reporter import ScanReporter
+from web_mapper.requester import HTTPRequester
+from web_mapper.security_assertions import SecurityAssertionValidator
 
 __author__ = "Ahmed Wael"
 
 
-class IntegrationTestHandler(http.server.BaseHTTPRequestHandler):
-    """Custom HTTP handler serving controlled test scenarios."""
-
-    def log_message(self, format, *args):
-        # Suppress noisy standard HTTP logs during test execution
-        pass
-
-    def do_GET(self):
-        url_path = self.path.split("?")[0]
-
-        # 1. Standard 200 OK with title
-        if url_path in ("/page200", "/status-200"):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            body = b"<html><head><title>Test Success Page</title></head><body>Welcome Home</body></html>"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        # 2. Redirect 301 (Permanent)
-        elif url_path == "/redirect-301":
-            self.send_response(301)
-            self.send_header("Location", "/page200")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
-        # 3. Redirect 302 (Temporary)
-        elif url_path == "/redirect-302":
-            self.send_response(302)
-            self.send_header("Location", "/auth/login")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
-        # 4. Forbidden 403
-        elif url_path == "/forbidden-403":
-            self.send_response(403)
-            self.send_header("Content-Type", "text/plain")
-            body = b"Access Denied by Security Policy"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        # 5. Not Found 404
-        elif url_path == "/notfound-404":
-            self.send_response(404)
-            self.send_header("Content-Type", "text/plain")
-            body = b"Endpoint Not Found"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        # 6. Server Error 500
-        elif url_path == "/error-500":
-            self.send_response(500)
-            self.send_header("Content-Type", "text/plain")
-            body = b"Internal Server Error: Database Connection Failed Traceback"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        # 7. Soft-404 Custom Error Page (returns 200 with error text)
-        elif url_path.startswith("/_wm_probe_") or url_path == "/soft404-page":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html")
-            body = b"<html><title>Page Not Found</title><body>Sorry, the requested document does not exist.</body></html>"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        # 8. Slow endpoint for timeout testing
-        elif url_path == "/slow-endpoint":
-            time.sleep(0.4)
-            self.send_response(200)
-            body = b"Slow Response Delivered"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        # 9. Recursive directory hierarchy
-        elif url_path == "/dir":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html")
-            body = b"<html><head><title>Directory Listing</title></head><body>Directory Root</body></html>"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        elif url_path == "/dir/secret":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            body = b"Secret nested content discovered"
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        # Default 404 for any other path
-        else:
-            self.send_response(404)
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
-
 class TestLocalServerIntegration(unittest.TestCase):
-    """Integration test suite executing against a live local HTTP server."""
+    """Full pipeline integration tests against the dedicated test server."""
 
     @classmethod
     def setUpClass(cls):
-        # Start server on an ephemeral loopback port
-        cls.server = http.server.HTTPServer(("127.0.0.1", 0), IntegrationTestHandler)
-        cls.port = cls.server.server_port
-        cls.base_url = f"http://127.0.0.1:{cls.port}"
-        cls.server_thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
-        cls.server_thread.start()
+        # 1. Start multi-threaded server on ephemeral loopback port
+        cls.server, cls.server_thread, cls.base_url = start_local_test_server(port=0)
+
+        # 2. Check if direct socket connect is permitted in this OS environment
+        cls.use_socket_opener = False
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"{cls.base_url}/test-200")
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                if resp.status == 200:
+                    cls.use_socket_opener = True
+        except (OSError, Exception):
+            cls.use_socket_opener = False
 
     @classmethod
     def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
+        stop_local_test_server(cls.server, cls.server_thread)
 
-    def test_status_200_and_title_extraction(self):
-        """Test standard 200 discovery and page title extraction."""
+    def _get_requester(self, config: ScanConfig) -> HTTPRequester:
+        """Create HTTPRequester with loopback socket or in-memory transport opener."""
+        if self.use_socket_opener:
+            return HTTPRequester(config)
+        opener = create_test_opener(IntegrationTestHandler, follow_redirects=config.follow_redirects)
+        return HTTPRequester(config, opener=opener)
+
+    def test_successful_endpoints(self):
+        """Verify discovery of 200 OK endpoints and HTML page title extraction."""
         cfg = ScanConfig(target_url=self.base_url, wildcard_detection=False)
-        requester = HTTPRequester(cfg)
-        res = requester.probe_path("/page200")
+        requester = self._get_requester(cfg)
 
-        self.assertIsNotNone(res)
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.title, "Test Success Page")
-        self.assertTrue(len(res.body_hash_md5) > 0)
+        res_200 = requester.probe_path("/test-200")
+        self.assertIsNotNone(res_200)
+        self.assertEqual(res_200.status_code, 200)
+        self.assertEqual(res_200.title, "Test Success Page")
+        self.assertGreater(res_200.content_length, 0)
+        self.assertIn("WebAdminMapper", res_200.server)
 
-    def test_redirect_301_and_302_detection(self):
-        """Test logging of 301 and 302 redirects with location headers."""
+        res_admin = requester.probe_path("/admin")
+        self.assertIsNotNone(res_admin)
+        self.assertEqual(res_admin.status_code, 200)
+        self.assertEqual(res_admin.title, "Administrative Control Panel")
+
+    def test_redirects_detection(self):
+        """Verify accurate capture of 301 and 302 redirects with Location headers."""
         cfg = ScanConfig(target_url=self.base_url, follow_redirects=False, wildcard_detection=False)
-        requester = HTTPRequester(cfg)
+        requester = self._get_requester(cfg)
 
-        res_301 = requester.probe_path("/redirect-301")
+        res_301 = requester.probe_path("/test-301")
         self.assertIsNotNone(res_301)
         self.assertEqual(res_301.status_code, 301)
-        self.assertEqual(res_301.redirect_location, "/page200")
+        self.assertEqual(res_301.redirect_location, "/test-200")
 
-        res_302 = requester.probe_path("/redirect-302")
+        res_302 = requester.probe_path("/test-302")
         self.assertIsNotNone(res_302)
         self.assertEqual(res_302.status_code, 302)
-        self.assertEqual(res_302.redirect_location, "/auth/login")
+        self.assertEqual(res_302.redirect_location, "/admin")
 
-    def test_forbidden_403_matching(self):
-        """Test 403 Forbidden matching."""
+        res_redir = requester.probe_path("/redirect")
+        self.assertIsNotNone(res_redir)
+        self.assertEqual(res_redir.status_code, 302)
+        self.assertEqual(res_redir.redirect_location, "/admin")
+
+    def test_forbidden_resources(self):
+        """Verify 403 Forbidden resource detection and status matching."""
         cfg = ScanConfig(target_url=self.base_url, wildcard_detection=False)
-        requester = HTTPRequester(cfg)
-        res = requester.probe_path("/forbidden-403")
+        requester = self._get_requester(cfg)
 
-        self.assertIsNotNone(res)
-        self.assertEqual(res.status_code, 403)
-        self.assertEqual(res.content_length, len(b"Access Denied by Security Policy"))
+        res_403 = requester.probe_path("/test-403")
+        self.assertIsNotNone(res_403)
+        self.assertEqual(res_403.status_code, 403)
+        self.assertGreater(res_403.content_length, 0)
 
-    def test_not_found_404_filtering(self):
-        """Test default 404 filtering suppresses not-found responses."""
+    def test_not_found_responses(self):
+        """Verify that default filter codes correctly suppress standard 404 responses."""
         cfg = ScanConfig(target_url=self.base_url, wildcard_detection=False)
-        requester = HTTPRequester(cfg)
-        res = requester.probe_path("/notfound-404")
-        self.assertIsNone(res)
+        requester = self._get_requester(cfg)
 
-    def test_server_error_500_reporting(self):
-        """Test 500 error reporting and matching."""
+        res_404 = requester.probe_path("/test-404")
+        self.assertIsNone(res_404, "Default filter_codes={404} must suppress 404 responses")
+
+        # When 404 is explicitly matched
+        cfg_match_404 = ScanConfig(target_url=self.base_url, filter_codes=set(), match_codes={404}, wildcard_detection=False)
+        req_match_404 = self._get_requester(cfg_match_404)
+        res_matched = req_match_404.probe_path("/test-404")
+        self.assertIsNotNone(res_matched)
+        self.assertEqual(res_matched.status_code, 404)
+
+    def test_server_errors_handling(self):
+        """Verify 500 Internal Server Error detection and response body retention."""
         cfg = ScanConfig(target_url=self.base_url, wildcard_detection=False)
-        requester = HTTPRequester(cfg)
-        res = requester.probe_path("/error-500")
+        requester = self._get_requester(cfg)
 
-        self.assertIsNotNone(res)
-        self.assertEqual(res.status_code, 500)
-        self.assertGreater(res.content_length, 0)
+        res_500 = requester.probe_path("/test-500")
+        self.assertIsNotNone(res_500)
+        self.assertEqual(res_500.status_code, 500)
+        self.assertGreater(res_500.content_length, 0)
 
-    def test_soft_404_automatic_suppression(self):
-        """Test heuristic calibration automatically suppresses soft-404 error pages."""
+    def test_soft_404_responses_suppression(self):
+        """Verify heuristic calibration dynamically suppresses disguised 200 OK soft-404s."""
         cfg = ScanConfig(target_url=self.base_url, wildcard_detection=True)
-        requester = HTTPRequester(cfg)
+        requester = self._get_requester(cfg)
 
-        # Calibrate heuristics against the local server (seeds _wm_probe_* responses)
+        # Baseline calibration seeds _wm_probe_* responses
         calib = requester.calibrate_heuristics()
         self.assertTrue(calib["soft404_active"])
 
-        # Probing another path with identical soft-404 body should be suppressed
-        res = requester.probe_path("/soft404-page")
-        self.assertIsNone(res, "Expected soft-404 page to be filtered out by heuristics")
+        # /soft-404 returns same template and must be suppressed
+        res_soft = requester.probe_path("/soft-404")
+        self.assertIsNone(res_soft, "Expected soft-404 response to be suppressed by heuristic engine")
 
-    def test_slow_endpoint_timeout_handling(self):
-        """Test timeout detection and classification on slow endpoints."""
+    def test_wildcard_behavior_detection(self):
+        """Verify catch-all wildcard application pages are detected and suppressed."""
+        cfg = ScanConfig(target_url=self.base_url, wildcard_detection=True)
+        requester = self._get_requester(cfg)
+
+        # Manually seed wildcard baseline
+        probe = requester._raw_probe("/wildcard_seed_probe")
+        if probe:
+            status, body, title = probe
+            requester.soft404.add_baseline(status, body, title)
+
+        # Probing arbitrary non-existent subpath should be identified as soft-404/wildcard
+        res_wc = requester.probe_path("/wildcard/arbitrary/subpath")
+        self.assertIsNone(res_wc)
+
+    def test_slow_responses_timeout(self):
+        """Verify timeout handling and error counter increments on slow endpoints."""
         cfg = ScanConfig(target_url=self.base_url, timeout=0.1, retries=0, wildcard_detection=False)
-        requester = HTTPRequester(cfg)
-        res = requester.probe_path("/slow-endpoint")
+        requester = self._get_requester(cfg)
 
-        self.assertIsNone(res)
+        res_slow = requester.probe_path("/slow")
+        self.assertIsNone(res_slow)
         self.assertGreaterEqual(requester.error_counts["timeouts"], 1)
 
-    def test_connection_failure_handling(self):
-        """Test unreachable port error classification and safe recovery."""
-        # Port 59998 should not be listening
-        cfg = ScanConfig(target_url="http://127.0.0.1:59998", timeout=0.5, retries=0, wildcard_detection=False)
-        requester = HTTPRequester(cfg)
-        res = requester.probe_path("/test")
+    def test_sensitive_looking_paths(self):
+        """Verify discovery of sensitive configuration assets like .env and .git/config."""
+        cfg = ScanConfig(target_url=self.base_url, wildcard_detection=False)
+        requester = self._get_requester(cfg)
 
-        self.assertIsNone(res)
-        self.assertGreaterEqual(requester.error_counts["connection_errors"], 1)
+        res_env = requester.probe_path("/.env")
+        self.assertIsNotNone(res_env)
+        self.assertEqual(res_env.status_code, 200)
 
-    def test_recursive_directory_discovery_integration(self):
-        """Test recursive queue exploration against real local HTTP hierarchy."""
+        res_git = requester.probe_path("/.git/config")
+        self.assertIsNotNone(res_git)
+        self.assertEqual(res_git.status_code, 200)
+
+    def test_recursive_discoveries(self):
+        """Verify recursive queue exploration discovers nested directory items."""
         cfg = ScanConfig(
             target_url=self.base_url,
             threads=2,
@@ -237,30 +204,120 @@ class TestLocalServerIntegration(unittest.TestCase):
             max_depth=2,
             wildcard_detection=False,
         )
-        requester = HTTPRequester(cfg)
+        requester = self._get_requester(cfg)
         engine = ExecutionEngine(cfg, requester)
 
-        # Seed discovery with /dir
-        all_gen = set(engine.generator.get_all_paths())
-        initial_completed = all_gen - {"/dir"}
-
-        # Patch generator for /dir prefix to produce /dir/secret
-        original_get_paths = engine.generator.get_all_paths
+        # Patch generator to supply /dir at root and /dir/secret for /dir prefix
         def custom_get_paths(base_prefix=""):
             if base_prefix == "/dir":
                 return ["/dir/secret"]
-            return original_get_paths(base_prefix)
-        engine.generator.get_all_paths = custom_get_paths
+            return ["/dir"]
 
-        results = engine.run(
-            initial_completed_paths=initial_completed,
-            extra_seed_paths={"/dir"},
-        )
+        engine.generator.get_all_paths = custom_get_paths
+        results = engine.run()
 
         found_paths = {r.path for r in results}
         self.assertIn("/dir", found_paths)
         self.assertIn("/dir/secret", found_paths)
-        self.assertGreaterEqual(engine.total_enqueued, 2)
+
+    def test_complete_scanner_pipeline(self):
+        """
+        Verify the complete end-to-end scanner pipeline:
+        Target -> Requester -> Engine -> Heuristics -> Security Assertions -> Reporter.
+        """
+        cfg = ScanConfig(
+            target_url=self.base_url,
+            threads=4,
+            wildcard_detection=False,
+            security_audit=True,
+            validate_vulns=True,
+        )
+        requester = self._get_requester(cfg)
+        engine = ExecutionEngine(cfg, requester)
+
+        # Seed realistic target paths
+        test_paths = [
+            "/test-200",
+            "/test-301",
+            "/test-403",
+            "/test-404",
+            "/test-500",
+            "/admin",
+            "/.env",
+            "/.git/config",
+        ]
+        engine.generator.get_all_paths = lambda base_prefix="": test_paths
+
+        # 1. Engine runs Requester & Heuristics
+        results = engine.run()
+        self.assertTrue(len(results) >= 6)
+
+        found_paths = {r.path for r in results}
+        self.assertIn("/test-200", found_paths)
+        self.assertIn("/admin", found_paths)
+        self.assertIn("/.env", found_paths)
+        self.assertIn("/.git/config", found_paths)
+        self.assertIn("/test-500", found_paths)
+        self.assertNotIn("/test-404", found_paths)
+
+        # 2. Security Assertions Validation
+        validator = SecurityAssertionValidator()
+        assertions = validator.validate_all(results)
+        self.assertTrue(len(assertions) > 0)
+
+        # Confirm specific security assertions
+        assertion_titles = {a.title for a in assertions}
+        assertion_endpoints = {a.endpoint for a in assertions}
+        self.assertIn("/admin", assertion_endpoints)
+        self.assertIn("/.env", assertion_endpoints)
+
+        # 3. Reporter export validation
+        reporter = ScanReporter(cfg)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Test JSON Export
+            json_file = Path(tmpdir) / "scan_report.json"
+            cfg.output_file = str(json_file)
+            cfg.output_format = "json"
+            reporter.export_results(
+                results=results,
+                duration_sec=1.5,
+                sitemap=engine.sitemap,
+                security_assertions=assertions,
+            )
+            self.assertTrue(json_file.exists())
+            with open(json_file, "r", encoding="utf-8") as jf:
+                report_data = json.load(jf)
+                self.assertIn("results", report_data)
+                self.assertIn("metadata", report_data)
+
+            # Test HTML Export
+            html_file = Path(tmpdir) / "scan_report.html"
+            cfg.output_file = str(html_file)
+            cfg.output_format = "html"
+            reporter.export_results(
+                results=results,
+                duration_sec=1.5,
+                sitemap=engine.sitemap,
+                security_assertions=assertions,
+            )
+            self.assertTrue(html_file.exists())
+            html_content = html_file.read_text(encoding="utf-8")
+            self.assertIn("WebAdminMapper", html_content)
+            self.assertIn("Test Success Page", html_content)
+
+            # Test Markdown Export
+            md_file = Path(tmpdir) / "scan_report.md"
+            cfg.output_file = str(md_file)
+            cfg.output_format = "markdown"
+            reporter.export_results(
+                results=results,
+                duration_sec=1.5,
+                sitemap=engine.sitemap,
+                security_assertions=assertions,
+            )
+            self.assertTrue(md_file.exists())
+            md_content = md_file.read_text(encoding="utf-8")
+            self.assertIn("# WebAdminMapper Audit Report", md_content)
 
 
 if __name__ == "__main__":

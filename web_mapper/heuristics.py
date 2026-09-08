@@ -8,9 +8,8 @@ Developer & Author: Ahmed Wael
 Copyright (c) 2026, Ahmed Wael. All rights reserved.
 """
 
-import hashlib
 import re
-from typing import Dict, List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 
 __author__ = "Ahmed Wael"
 __copyright__ = "Copyright (c) 2026, Ahmed Wael"
@@ -95,6 +94,59 @@ class Soft404Detector:
         self.wildcard_status_codes.add(status_code)
         return profile
 
+    def evaluate(
+        self,
+        status_code: int,
+        content_length: int,
+        body_sample: bytes,
+        title: Optional[str] = None,
+    ) -> Tuple[bool, float, str]:
+        """
+        Evaluate an HTTP response against baseline profiles.
+        Returns (is_soft_404: bool, similarity_score: float, reason: str).
+        Authored by Ahmed Wael.
+        """
+        if not self.baselines:
+            return False, 0.0, "no_baselines_configured"
+
+        clean_title = (title or "").lower().strip()
+        decoded = body_sample.decode("utf-8", errors="ignore") if body_sample else ""
+        word_count, line_count = compute_words_and_lines(decoded)
+        tokens = compute_token_set(decoded)
+
+        max_similarity = 0.0
+
+        for base in self.baselines:
+            if base.status_code != status_code:
+                continue
+
+            # Token similarity calculation
+            similarity = 0.0
+            if tokens and base.tokens:
+                similarity = jaccard_similarity(tokens, base.tokens)
+                if similarity > max_similarity:
+                    max_similarity = similarity
+
+            size_diff = abs(base.content_length - content_length)
+
+            # Exact byte length match (non-empty)
+            if size_diff == 0 and content_length > 0:
+                return True, 1.0, "exact_size_match"
+
+            # Word count and line count match exactly
+            if base.word_count == word_count and base.line_count == line_count and word_count > 0:
+                return True, max(0.98, similarity), "word_and_line_count_match"
+
+            # Title match and small size deviation
+            if base.title and clean_title and base.title == clean_title and size_diff < 60:
+                return True, max(0.95, similarity), "title_and_size_cluster"
+
+            # Dynamic template token similarity threshold
+            if similarity >= 0.90 and size_diff < 200:
+                return True, similarity, f"high_token_similarity_{similarity:.2f}"
+
+        return False, max_similarity, "distinct_legitimate_content"
+
     def is_soft_404(
         self,
         status_code: int,
@@ -107,39 +159,8 @@ class Soft404Detector:
         Uses multi-factor checks: exact size, word/line count, and token similarity.
         Authored by Ahmed Wael.
         """
-        if not self.baselines:
-            return False
-
-        clean_title = (title or "").lower().strip()
-        decoded = body_sample.decode("utf-8", errors="ignore") if body_sample else ""
-        word_count, line_count = compute_words_and_lines(decoded)
-        tokens = compute_token_set(decoded)
-
-        for base in self.baselines:
-            # Must match status code
-            if base.status_code != status_code:
-                continue
-
-            # Check exact length or tiny deviation (e.g. timestamp or URL echo difference)
-            size_diff = abs(base.content_length - content_length)
-            if size_diff == 0:
-                return True
-
-            # If word count and line count match exactly, it's virtually guaranteed to be a template
-            if base.word_count == word_count and base.line_count == line_count and word_count > 0:
-                return True
-
-            # Check title match if present
-            if base.title and clean_title and base.title == clean_title and size_diff < 50:
-                return True
-
-            # Token similarity check for dynamic templates
-            if tokens and base.tokens:
-                similarity = jaccard_similarity(tokens, base.tokens)
-                if similarity >= 0.94 and size_diff < 150:
-                    return True
-
-        return False
+        is_match, _, _ = self.evaluate(status_code, content_length, body_sample, title)
+        return is_match
 
 
 class WAFDetector:

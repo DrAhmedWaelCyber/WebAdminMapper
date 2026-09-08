@@ -1,15 +1,18 @@
 """
-WebAdminMapper - Defensive Security Assessment & Compliance Validation Engine
-==============================================================================
+WebAdminMapper - Automated Security Baseline Assessment & Control Mapping
+==========================================================================
 Programmatically audits discovered application endpoints and server configurations
 against industry-standard security baselines:
   - OWASP ASVS v4.0 (Application Security Verification Standard)
   - CIS Web Application & Server Configuration Benchmarks
   - NIST SP 800-53 Rev 5 (Security and Privacy Controls for Information Systems)
 
-Evaluates endpoints using non-destructive, safe automated assertions to identify
-misconfigurations, weak access controls, sensitive asset exposures, and injection
-attack surfaces.
+Evaluates endpoints using non-destructive, safe automated assertions to map
+observable technical indicators to formal security controls, identifying
+misconfigurations, weak access boundaries, and sensitive asset exposures.
+
+NOTICE: This engine provides automated evidence-based checks and control
+mappings, not complete organizational compliance certification.
 
 Developer & Author: Ahmed Wael
 Email: ahmedwael6143@gmail.com
@@ -19,7 +22,6 @@ Copyright (c) 2026, Ahmed Wael. All rights reserved.
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
-from urllib.parse import urlparse
 
 from .requester import ScanResult
 
@@ -30,10 +32,10 @@ __version__ = "1.1.0"
 
 
 COMPLIANCE_DISCLAIMER = (
-    "NOTICE: WebAdminMapper Compliance Engine performs automated, non-destructive heuristic checks "
-    "and indicator mapping against security baselines (OWASP ASVS v4.0, CIS Web Benchmarks, NIST SP 800-53 Rev 5). "
-    "Automated checks identify observable indicators and misconfigurations, but do not replace comprehensive "
-    "manual penetration testing, source code review, or formal regulatory compliance audits."
+    "NOTICE: WebAdminMapper provides Automated Security Baseline Assessment & Control Mapping "
+    "against security baselines (OWASP ASVS v4.0, CIS Web Benchmarks, NIST SP 800-53 Rev 5). "
+    "Automated checks identify observable evidence and technical indicators, but do not replace "
+    "comprehensive manual penetration testing, source code review, or formal organizational regulatory certification."
 )
 
 
@@ -77,6 +79,7 @@ class ComplianceFinding:
     evidence: str
     remediation: str
     limitations: str = ""
+    detection_logic: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -88,6 +91,7 @@ class ComplianceFinding:
             "title": self.title,
             "endpoint": self.endpoint,
             "evidence": self.evidence,
+            "detection_logic": self.detection_logic,
             "remediation": self.remediation,
             "limitations": self.limitations,
             "author": __author__,
@@ -105,6 +109,7 @@ class ComplianceRule:
     description: str
     remediation: str
     limitations: str = ""
+    detection_logic: str = ""
     weight: float = 10.0
 
 
@@ -196,6 +201,7 @@ class ComplianceEngine:
                 description="Verify that administrative and operational interfaces enforce strict authentication and access control gates.",
                 remediation="Enforce mandatory multi-factor authentication, session gating, and IP allowlists on all administrative interfaces.",
                 limitations="Automated check detects HTTP 200 responses on common administrative path patterns; does not assess internal session authentication mechanics or post-auth authorization gates.",
+                detection_logic="Identifies HTTP 200 responses matching administrative route patterns (/admin, /dashboard, /cpanel, etc.) that do not enforce pre-authentication redirects or 401/403 challenges.",
                 weight=25.0,
             ),
             "NIST-AC-3": ComplianceRule(
@@ -207,6 +213,7 @@ class ComplianceEngine:
                 description="The system must enforce approved authorizations for logical access to administrative information and functions.",
                 remediation="Configure role-based access control (RBAC) and authorization checks prior to fulfilling requests to sensitive endpoints.",
                 limitations="Validates public reachability of privileged endpoints; cannot inspect multi-tenant role boundaries or server-side policy enforcement engines.",
+                detection_logic="Flags public unauthenticated reachability (HTTP 200 OK) on protected management endpoints and configuration surfaces.",
                 weight=25.0,
             ),
             "CIS-WEB-1.1": ComplianceRule(
@@ -218,6 +225,7 @@ class ComplianceEngine:
                 description="Administrative tools, consoles, and dashboards should not be directly routable from untrusted public networks.",
                 remediation="Restrict administrative route bindings to internal management networks, VPNs, or private subnets.",
                 limitations="Heuristic discovery flags route patterns accessible over public ingress; internal network segmentation or VPN gateways cannot be confirmed remotely.",
+                detection_logic="Detects administrative or operational console paths accessible over public web routes without network perimeter gating.",
                 weight=25.0,
             ),
 
@@ -231,6 +239,7 @@ class ComplianceEngine:
                 description="Verify that sensitive configuration files, environment definitions, and secrets are not publicly accessible.",
                 remediation="Remove sensitive assets from the web document root and block direct file requests via web server access rules.",
                 limitations="Validates HTTP 200 responses on known sensitive file extensions; custom 200 soft-404 handlers may require manual verification.",
+                detection_logic="Checks for HTTP 200 status codes with content body matching sensitive configuration or environment files (.env, .sql, .bak, .cfg, etc.).",
                 weight=20.0,
             ),
             "NIST-SC-28": ComplianceRule(
@@ -242,6 +251,7 @@ class ComplianceEngine:
                 description="Protect confidential system configuration files, database backups, and credentials from unauthorized exposure.",
                 remediation="Store backups and credentials in isolated, encrypted vaults outside of the public HTTP document root.",
                 limitations="Non-destructive discovery inspects status codes and content lengths; does not extract database contents or decipher credentials.",
+                detection_logic="Monitors for accessible database dumps, archive files, or private keys within the public web directory structure.",
                 weight=20.0,
             ),
             "CIS-WEB-2.3": ComplianceRule(
@@ -253,6 +263,7 @@ class ComplianceEngine:
                 description="Do not store database dumps, archive backups, or configuration files within document root directories.",
                 remediation="Audit web root directories and deploy web server deny rules matching .sql, .bak, .env, and .conf extensions.",
                 limitations="Relies on path enumeration; storage of backup assets under obfuscated or dynamic filenames cannot be mapped via dictionary probing.",
+                detection_logic="Flags presence of downloadable system backup artifacts or configuration files responding with HTTP 200 in the document root.",
                 weight=20.0,
             ),
 
@@ -266,6 +277,7 @@ class ComplianceEngine:
                 description="Verify that source code management repositories (.git, .svn) are not exposed via the web server.",
                 remediation="Block access to .git, .svn, and .hg directories at the web server or reverse proxy level.",
                 limitations="Detects presence of version control route patterns responding with 200/30x/403; does not download repository trees or object databases.",
+                detection_logic="Detects source code management metadata paths (/.git/, /.svn/, /.hg/) returning HTTP 200, 30x, or 403 status codes.",
                 weight=20.0,
             ),
             "CIS-WEB-2.4": ComplianceRule(
@@ -277,6 +289,7 @@ class ComplianceEngine:
                 description="Ensure source code management metadata folders are blocked from HTTP retrieval.",
                 remediation="Configure server location blocks to return HTTP 404 or 403 on requests matching /\\.(git|svn|hg).",
                 limitations="Checks common SCM directory entries; non-standard version control paths or internal repo mirrors are not detected.",
+                detection_logic="Validates whether source control directories are exposed or unblocked in the web root.",
                 weight=20.0,
             ),
 
@@ -290,6 +303,7 @@ class ComplianceEngine:
                 description="Verify that the application server suppresses granular version tokens in HTTP response headers.",
                 remediation="Disable verbose server headers (e.g. ServerTokens Prod in Apache, server_tokens off in Nginx).",
                 limitations="Inspects HTTP response headers for version numbers; obfuscated, generic, or spoofed server tokens cannot be verified remotely.",
+                detection_logic="Inspects HTTP response headers (Server, X-Powered-By, X-AspNet-Version) for presence of detailed version numbers (regex '\\d+\\.\\d+').",
                 weight=5.0,
             ),
             "CIS-WEB-1.3": ComplianceRule(
@@ -301,6 +315,7 @@ class ComplianceEngine:
                 description="Configure web server to minimize information disclosed in the Server and X-Powered-By response headers.",
                 remediation="Strip Server and X-Powered-By headers using reverse proxy rules or server configuration directives.",
                 limitations="Evaluates HTTP response headers; cannot detect server identity if stripped upstream by a CDN or WAF.",
+                detection_logic="Detects presence of identifying technology banners in Server or X-Powered-By HTTP response headers.",
                 weight=5.0,
             ),
             "NIST-SI-11-A": ComplianceRule(
@@ -312,6 +327,7 @@ class ComplianceEngine:
                 description="The system must prevent disclosure of internal architectural components and framework versions.",
                 remediation="Configure framework and runtime middleware to suppress identifying response headers.",
                 limitations="Identifies leaked header banners; does not inspect HTML comments or client-side script bundles for technology fingerprints.",
+                detection_logic="Audits response headers for runtime and infrastructure version disclosures.",
                 weight=5.0,
             ),
 
@@ -325,6 +341,7 @@ class ComplianceEngine:
                 description="Verify that the application handles errors gracefully and returns generic error messages to clients.",
                 remediation="Implement custom, standardized error pages (404, 500) and log diagnostic details internally.",
                 limitations="Flags 5xx status codes; stack trace depth and internal error exposure require manual inspection of response body content.",
+                detection_logic="Identifies unhandled server-side exceptions resulting in HTTP 500-599 responses during path enumeration.",
                 weight=10.0,
             ),
             "NIST-SI-11-B": ComplianceRule(
@@ -336,6 +353,7 @@ class ComplianceEngine:
                 description="The information system must generate error messages that provide necessary information without revealing details exploited by adversaries.",
                 remediation="Sanitize all error outputs and configure production environments to disable debug modes.",
                 limitations="Monitors unhandled HTTP 5xx responses triggered during non-destructive probing; does not send fuzzing malformed payloads.",
+                detection_logic="Monitors for internal server error responses (5xx) that may expose underlying debugging state or stack traces.",
                 weight=10.0,
             ),
 
@@ -349,6 +367,7 @@ class ComplianceEngine:
                 description="Verify that all communications use TLS and enforce Strict-Transport-Security with a long max-age.",
                 remediation="Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains; preload' to all HTTPS responses.",
                 limitations="Validates presence and syntax of Strict-Transport-Security header; does not validate full TLS certificate chain validity or cipher suite negotiation.",
+                detection_logic="Verifies that the target uses HTTPS and returns a valid 'Strict-Transport-Security' response header with max-age directive.",
                 weight=15.0,
             ),
             "NIST-SC-8": ComplianceRule(
@@ -360,6 +379,7 @@ class ComplianceEngine:
                 description="The information system must protect the confidentiality and integrity of transmitted information using strict encryption standards.",
                 remediation="Enforce TLS 1.2+ across all application routes and deploy HSTS headers with preload directives.",
                 limitations="Confirms HTTPS protocol usage and HSTS enforcement; does not audit server TLS cipher suites or ephemeral key exchange parameters.",
+                detection_logic="Audits transport encryption enforcement and HSTS header presence across base responses.",
                 weight=15.0,
             ),
             "CIS-WEB-3.1": ComplianceRule(
@@ -371,6 +391,7 @@ class ComplianceEngine:
                 description="Ensure the web server transmits the HSTS header to prevent SSL-stripping and protocol downgrade attacks.",
                 remediation="Configure web server to inject Strict-Transport-Security header on all virtual hosts.",
                 limitations="Header validation only; preloaded HSTS list status in web browsers is not queried.",
+                detection_logic="Checks for missing or empty 'Strict-Transport-Security' header on HTTPS targets.",
                 weight=15.0,
             ),
 
@@ -384,6 +405,7 @@ class ComplianceEngine:
                 description="Verify that a Content Security Policy is defined to mitigate cross-site scripting (XSS) and code injection.",
                 remediation="Define a restrictive Content-Security-Policy (e.g. default-src 'self'; object-src 'none'; base-uri 'self').",
                 limitations="Evaluates presence of Content-Security-Policy header; does not evaluate CSP policy bypasses, nonce strength, or fine-grained script hash rules.",
+                detection_logic="Evaluates presence of 'Content-Security-Policy' header in baseline HTTP responses.",
                 weight=10.0,
             ),
             "OWASP-ASVS-V14.2-XFO": ComplianceRule(
@@ -395,6 +417,7 @@ class ComplianceEngine:
                 description="Verify that frame restriction headers or CSP frame-ancestors are set to protect against UI redressing / clickjacking.",
                 remediation="Send 'X-Frame-Options: DENY' or 'Content-Security-Policy: frame-ancestors 'none'' in all responses.",
                 limitations="Checks X-Frame-Options and CSP frame-ancestors header presence; does not perform browser-rendered iframe framing tests.",
+                detection_logic="Checks for presence of 'X-Frame-Options' header or CSP 'frame-ancestors' directive to mitigate clickjacking.",
                 weight=10.0,
             ),
             "CIS-WEB-3.2": ComplianceRule(
@@ -406,6 +429,7 @@ class ComplianceEngine:
                 description="Configure web server to send X-Frame-Options or CSP frame-ancestors directive to prevent framing.",
                 remediation="Configure global header injection: 'X-Frame-Options: SAMEORIGIN'.",
                 limitations="Static header check; intermediate reverse proxy header strip/override behavior cannot be detected.",
+                detection_logic="Verifies 'X-Frame-Options' or CSP framing restrictions are active on root responses.",
                 weight=10.0,
             ),
 
@@ -419,6 +443,7 @@ class ComplianceEngine:
                 description="Verify that X-Content-Type-Options is set to 'nosniff' to prevent browsers from MIME-sniffing response bodies.",
                 remediation="Add 'X-Content-Type-Options: nosniff' header across all HTTP responses.",
                 limitations="Checks X-Content-Type-Options: nosniff header presence; does not perform active polyglot file upload or content sniffing attacks.",
+                detection_logic="Checks for 'X-Content-Type-Options: nosniff' header in baseline response headers.",
                 weight=5.0,
             ),
             "CIS-WEB-3.3": ComplianceRule(
@@ -430,6 +455,7 @@ class ComplianceEngine:
                 description="Ensure the web server instructs client browsers not to override the declared Content-Type header.",
                 remediation="Add 'X-Content-Type-Options: nosniff' header directive to the global web server configuration.",
                 limitations="Validates presence in response headers; browser-specific edge-case behavior is not simulated.",
+                detection_logic="Verifies MIME-type sniffing prevention header ('X-Content-Type-Options: nosniff') is configured.",
                 weight=5.0,
             ),
 
@@ -443,6 +469,7 @@ class ComplianceEngine:
                 description="Verify that sensitive responses (authenticated, administrative, API) prevent caching in intermediate proxies and browsers.",
                 remediation="Set 'Cache-Control: no-store, no-cache, must-revalidate' and 'Pragma: no-cache' on authenticated responses.",
                 limitations="Checks Cache-Control: no-store header on sensitive or administrative endpoints; does not evaluate proxy or CDN cache key configurations.",
+                detection_logic="Inspects Cache-Control header on administrative/sensitive endpoints to ensure 'no-store' is enforced.",
                 weight=5.0,
             ),
 
@@ -456,6 +483,7 @@ class ComplianceEngine:
                 description="Identify query parameter interfaces requiring strict positive input validation and parameterized processing.",
                 remediation="Apply parameterized queries, strong schema validation, and context-aware output encoding across all inputs.",
                 limitations="Passive enumeration of parameter query interfaces; does not execute active injection payloads (SQLi, XSS, SSRF).",
+                detection_logic="Identifies URL endpoints exposing dynamic query parameters for input validation mapping.",
                 weight=2.0,
             ),
             "NIST-SI-10": ComplianceRule(
@@ -467,6 +495,7 @@ class ComplianceEngine:
                 description="The information system must validate all user inputs to ensure they conform to expected syntax and rules.",
                 remediation="Implement strict server-side validation against well-formed regex schemas and type specifications.",
                 limitations="Maps observable URL parameter entrypoints without active fault injection or input boundary testing.",
+                detection_logic="Catalogs observed input query parameter interfaces requiring strict validation gates.",
                 weight=2.0,
             ),
 
@@ -480,6 +509,7 @@ class ComplianceEngine:
                 description="Verify that CORS headers do not use wildcard '*' with credentials or expose internal operational endpoints.",
                 remediation="Explicitly specify trusted origin domains instead of utilizing wildcard '*' in Access-Control-Allow-Origin.",
                 limitations="Evaluates Access-Control-Allow-Origin header value on root response; dynamic origin reflection may require multi-origin test requests.",
+                detection_logic="Checks for 'Access-Control-Allow-Origin: *' wildcard header in base HTTP responses.",
                 weight=10.0,
             ),
         }
@@ -530,6 +560,7 @@ class ComplianceEngine:
                 evidence=evidence,
                 remediation=rule.remediation,
                 limitations=rule.limitations,
+                detection_logic=rule.detection_logic,
             ))
             rule_violations.add(rule_id)
 

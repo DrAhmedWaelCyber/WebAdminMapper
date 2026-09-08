@@ -70,11 +70,11 @@ class NetworkDiagnostics:
             cname, aliases, addrs = socket.gethostbyname_ex(hostname)
             canonical_name = cname
             ip_addresses = addrs
-        except Exception:
+        except (socket.gaierror, socket.herror, socket.error, OSError):
             try:
                 addr_info = socket.getaddrinfo(hostname, port, socket.AF_INET, socket.SOCK_STREAM)
                 ip_addresses = sorted(list({info[4][0] for info in addr_info if info and info[4]}))
-            except Exception:
+            except (socket.gaierror, socket.herror, socket.error, OSError):
                 ip_addresses = []
 
         primary_ip = ip_addresses[0] if ip_addresses else None
@@ -84,7 +84,7 @@ class NetworkDiagnostics:
             try:
                 rev_host, _, _ = socket.gethostbyaddr(primary_ip)
                 reverse_dns = rev_host
-            except Exception:
+            except (socket.herror, socket.gaierror, socket.error, OSError):
                 reverse_dns = None
 
         # 3. TCP Connect Latency Measurement
@@ -93,7 +93,7 @@ class NetworkDiagnostics:
                 start = time.perf_counter()
                 with socket.create_connection((primary_ip, port), timeout=timeout):
                     tcp_latency_ms = (time.perf_counter() - start) * 1000.0
-            except Exception:
+            except (socket.timeout, TimeoutError, ConnectionError, OSError):
                 tcp_latency_ms = 0.0
 
         return NetworkDiagResult(

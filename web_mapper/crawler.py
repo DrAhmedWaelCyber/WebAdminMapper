@@ -9,8 +9,8 @@ Copyright (c) 2026, Ahmed Wael. All rights reserved.
 """
 
 import re
-from typing import List, Optional, Set
-from urllib.parse import urljoin, urlparse
+from typing import Set
+from urllib.parse import urlparse
 
 from .requester import HTTPRequester
 

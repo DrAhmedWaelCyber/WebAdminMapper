@@ -11,7 +11,7 @@ Copyright (c) 2026, Ahmed Wael. All rights reserved.
 import socket
 import ssl
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 
 __author__ = "Ahmed Wael"
@@ -96,7 +96,7 @@ class CertInspector:
                 with socket.create_connection((hostname, port), timeout=timeout) as sock:
                     with verif_context.wrap_socket(sock, server_hostname=hostname) as ssock:
                         cert_dict = ssock.getpeercert()
-            except Exception:
+            except (ssl.SSLError, ssl.CertificateError, socket.error, OSError):
                 cert_dict = None
 
             if not cert_dict:
@@ -129,7 +129,7 @@ class CertInspector:
                     expiry_date = datetime.strptime(not_after, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc)
                     now = datetime.now(timezone.utc)
                     days_left = (expiry_date - now).days
-                except Exception:
+                except (ValueError, TypeError):
                     pass
 
             # Parse SANs (Subject Alternative Names)
@@ -146,5 +146,13 @@ class CertInspector:
                 cipher=cipher_name,
             )
 
-        except Exception:
+        except (socket.timeout, TimeoutError):
+            return None
+        except (ssl.SSLError, ssl.CertificateError):
+            return None
+        except (ConnectionError, socket.gaierror, OSError):
+            return None
+        except Exception as err:
+            import sys
+            sys.stderr.write(f"[WebAdminMapper CertInspector] Unexpected error inspecting certificate for {target_url}: {type(err).__name__}: {err}\n")
             return None
