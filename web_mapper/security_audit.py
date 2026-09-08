@@ -8,6 +8,7 @@ Developer & Author: Ahmed Wael
 Copyright (c) 2026, Ahmed Wael. All rights reserved.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
@@ -146,17 +147,27 @@ class SecurityAuditor:
         # 3. Check Cookies for Security Attributes
         set_cookie = headers_lower.get("set-cookie", "")
         if set_cookie:
-            cookies = set_cookie.split(",")
+            # Split multiple cookies without breaking on commas inside Expires dates
+            cookies = re.split(r', *(?=[a-zA-Z0-9_!#$%&\'*+\-.^_`|~]+=[^;])', set_cookie)
             for cookie in cookies:
                 cookie_clean = cookie.strip()
-                cookie_name = cookie_clean.split("=")[0] if "=" in cookie_clean else "Cookie"
-                if target_url.startswith("https://") and "secure" not in cookie_clean.lower():
+                if not cookie_clean:
+                    continue
+                parts = [p.strip() for p in cookie_clean.split(";")]
+                cookie_name = parts[0].split("=")[0].strip() if parts and "=" in parts[0] else "Cookie"
+                attr_keys = [p.lower() for p in parts[1:]]
+
+                has_secure = any(a == "secure" or a.startswith("secure=") for a in attr_keys)
+                has_httponly = any(a == "httponly" or a.startswith("httponly=") for a in attr_keys)
+                has_samesite = any(a.startswith("samesite") for a in attr_keys)
+
+                if target_url.startswith("https://") and not has_secure:
                     cookie_issues.append(f"'{cookie_name}' missing 'Secure' flag.")
                     score -= 5
-                if "httponly" not in cookie_clean.lower():
+                if not has_httponly:
                     cookie_issues.append(f"'{cookie_name}' missing 'HttpOnly' flag.")
                     score -= 5
-                if "samesite" not in cookie_clean.lower():
+                if not has_samesite:
                     cookie_issues.append(f"'{cookie_name}' missing 'SameSite' attribute.")
                     score -= 3
 

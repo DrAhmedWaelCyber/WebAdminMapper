@@ -78,6 +78,7 @@ class ScanResult:
     body_hash_md5: str = ""
     body_hash_sha256: str = ""
     allowed_methods: Optional[str] = None
+    discovered_links: List[str] = field(default_factory=list)
     timestamp: str = ""
 
     def __post_init__(self) -> None:
@@ -103,6 +104,7 @@ class ScanResult:
             "body_hash_md5": self.body_hash_md5,
             "body_hash_sha256": self.body_hash_sha256,
             "allowed_methods": self.allowed_methods,
+            "discovered_links": self.discovered_links,
             "timestamp": self.timestamp,
             "author": __author__,
         }
@@ -249,10 +251,10 @@ class HTTPRequester:
         attempts = 0
         max_attempts = max(1, self.config.retries + 1)
         start_time = time.perf_counter()
-        req = self._prepare_request(full_url)
 
         while attempts < max_attempts:
             attempts += 1
+            req = self._prepare_request(full_url)
             try:
                 with self._opener.open(req, timeout=self.config.timeout) as response:
                     elapsed_ms = (time.perf_counter() - start_time) * 1000.0
@@ -357,6 +359,13 @@ class HTTPRequester:
         sha256_hash = hashlib.sha256(body).hexdigest() if body else ""
         allowed_methods = headers.get("Allow") or headers.get("allow")
 
+        # Discovered HTML links
+        discovered_links: List[str] = []
+        if self.config.harvest_routes and status_code == 200 and text and ("html" in content_type.lower() or not content_type):
+            from .crawler import RouteHarvester
+            harvester = RouteHarvester(self.config.target_url)
+            discovered_links = sorted(list(harvester.extract_html_links(text)))
+
         return ScanResult(
             path=path,
             url=full_url,
@@ -374,6 +383,7 @@ class HTTPRequester:
             body_hash_md5=md5_hash,
             body_hash_sha256=sha256_hash,
             allowed_methods=allowed_methods,
+            discovered_links=discovered_links,
         )
 
 
@@ -401,6 +411,8 @@ class HTTPRequester:
         except Exception:
             return None
 
+        text = body.decode("utf-8", errors="ignore") if body else ""
+        word_count, line_count = compute_words_and_lines(text)
         title = self._extract_title(body)
         server = headers.get("Server", "").strip()
         redirect_loc = headers.get("Location") or headers.get("location")
@@ -410,7 +422,6 @@ class HTTPRequester:
         self.base_headers = headers
         self.discovered_techs = self.profiler.analyze(headers, body[:8192])
         self.detected_waf = self.waf_detector.check_headers(headers, status)
-
 
         md5_hash = hashlib.md5(body).hexdigest() if body else ""
         sha256_hash = hashlib.sha256(body).hexdigest() if body else ""
@@ -422,8 +433,8 @@ class HTTPRequester:
             status_code=status,
             content_length=len(body),
             response_time_ms=elapsed,
-            word_count=len(body.split()),
-            line_count=len(body.splitlines()),
+            word_count=word_count,
+            line_count=line_count,
             title=title,
             redirect_location=redirect_loc,
             content_type=content_type,

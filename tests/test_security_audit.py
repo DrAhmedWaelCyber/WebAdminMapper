@@ -30,10 +30,12 @@ class TestSecurityAuditor(unittest.TestCase):
             "x-content-type-options": "nosniff",
             "referrer-policy": "strict-origin-when-cross-origin",
             "permissions-policy": "geolocation=()",
+            "set-cookie": "sessionid=abc123xyz; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/; Secure; HttpOnly; SameSite=Strict",
         }
         result = auditor.audit("https://example.com", headers)
         self.assertIn(result.grade, ["A", "A+"])
         self.assertEqual(len(result.missing_headers), 0)
+        self.assertEqual(len(result.cookie_issues), 0)
 
 
 if __name__ == "__main__":

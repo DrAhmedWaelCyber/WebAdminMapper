@@ -218,6 +218,7 @@ webadminmapper -u https://example.com
 | **Target Options** | | | | |
 | `-u` | `--url` | String | *Required* | Target host base URL (e.g. `https://example.com`). |
 | | `--profile` | Path | `None` | Load complete scan configuration from a JSON profile file. |
+| | `--resume` | Path | `None` | Resume discovery session from a saved JSON checkpoint file. |
 | **Wordlists & Fuzzing** | | | | |
 | `-w` | `--wordlist` | Path | `None` | Path to custom wordlist file, or `-` for STDIN pipe. |
 | `-m` | `--mode` | Choice | `all` | Curated catalog: `admin`, `common`, `sensitive`, `cloud`, or `all`. |
@@ -250,6 +251,7 @@ webadminmapper -u https://example.com
 | | `--no-tech` | Flag | `False` | Disable automatic technology & CMS profiling. |
 | | `--no-audit` | Flag | `False` | Disable defensive security posture and header evaluation. |
 | | `--no-cert` | Flag | `False` | Disable SSL/TLS certificate inspection. |
+| | `--no-net-diag`| Flag | `False` | Disable network DNS resolution and TCP latency diagnostics. |
 | | `--no-harvest` | Flag | `False` | Disable route harvesting from `robots.txt` and `sitemap.xml`. |
 | | `--no-tree` | Flag | `False` | Disable rendering the ASCII directory tree. |
 | | `--no-title` | Flag | `False` | Disable HTML page title extraction. |
@@ -258,13 +260,14 @@ webadminmapper -u https://example.com
 | `-H` | `--header` | String | `None` | Custom header in `'Key: Value'` format (repeatable). |
 | `-b` | `--cookie` | String | `None` | HTTP Cookie string (e.g. `'session=123'`). |
 | `-p` | `--proxy` | URL | `None` | Proxy URL (e.g. `http://127.0.0.1:8080`). |
-| `-k` | `--insecure` | Flag | `True` | Ignore SSL certificate validation errors. |
+| `-k` | `--insecure` | Flag | `False` | Explicitly disable SSL certificate validation (default behavior). |
 | | `--verify-ssl` | Flag | `False` | Strictly enforce SSL certificate verification. |
 | | `--follow-redirects`| Flag | `False` | Follow HTTP redirects automatically. |
 | **Output & Profiles** | | | | |
 | `-o` | `--output` | Path | `None` | Destination file to export findings. |
 | `-f` | `--format` | Choice | `table` | Export format: `table`, `html`, `json`, `csv`, `markdown`, `txt`. |
 | | `--save-profile` | Path | `None` | Save current scan configuration to a JSON profile. |
+| | `--checkpoint` | Path | `None` | Save session state checkpoint file upon completion or interrupt. |
 | `-q` | `--quiet` | Flag | `False` | Quiet mode: suppress banners, print findings only. |
 | `-v` | `--version` | Flag | - | Display version and author information. |
 
@@ -392,9 +395,9 @@ python3 -m unittest discover tests
 
 Output:
 ```
-..............
+.......................
 ----------------------------------------------------------------------
-Ran 14 tests in 0.016s
+Ran 23 tests in 0.035s
 
 OK
 ```

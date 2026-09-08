@@ -16,9 +16,11 @@ import time
 from typing import List, Optional, Set
 
 from .cert_inspector import CertificateInfo, CertInspector
+from .checkpoint import SessionCheckpoint
 from .config import DEFAULT_FILTER_CODES, DEFAULT_MATCH_CODES, ScanConfig
 from .crawler import RouteHarvester
 from .engine import ExecutionEngine
+from .network_diag import NetworkDiagnostics, NetworkDiagResult
 from .reporter import Colors, ScanReporter
 from .requester import HTTPRequester, ScanResult
 from .security_audit import SecurityAuditor, SecurityAuditResult
@@ -78,6 +80,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Load complete scan configuration from a JSON profile file",
+    )
+    target_group.add_argument(
+        "--resume",
+        dest="resume",
+        type=str,
+        default=None,
+        help="Resume discovery session from a saved JSON checkpoint file",
     )
 
     # Wordlist & Path Generation
@@ -285,6 +294,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable SSL/TLS certificate inspection",
     )
     heur_group.add_argument(
+        "--no-net-diag",
+        dest="no_net_diag",
+        action="store_true",
+        help="Disable network DNS resolution and TCP latency diagnostics",
+    )
+    heur_group.add_argument(
         "--no-harvest",
         dest="no_harvest",
         action="store_true",
@@ -336,8 +351,8 @@ def build_parser() -> argparse.ArgumentParser:
         "-k", "--insecure",
         dest="insecure",
         action="store_true",
-        default=True,
-        help="Ignore SSL certificate errors (enabled by default for mapping)",
+        default=False,
+        help="Explicitly disable SSL certificate verification (default behavior)",
     )
     req_group.add_argument(
         "--verify-ssl",
@@ -374,6 +389,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Save current configuration options to a JSON profile file",
+    )
+    out_group.add_argument(
+        "--checkpoint",
+        dest="checkpoint",
+        type=str,
+        default=None,
+        help="Save scan session state to a JSON checkpoint file upon completion or interruption",
     )
     out_group.add_argument(
         "-q", "--quiet",
@@ -427,12 +449,30 @@ def run_scanner(config: ScanConfig) -> int:
             print(f"  {Colors.BOLD}[*] Proxy Upstream    :{Colors.RESET} {config.proxy}")
         print(f"  {Colors.BOLD}[*] Lead Developer    :{Colors.RESET} Ahmed Wael\n")
 
+    # Session Checkpoint Resumption
+    initial_completed: Optional[Set[str]] = None
+    initial_results: Optional[List[ScanResult]] = None
+    if config.resume_checkpoint:
+        try:
+            chk_data = SessionCheckpoint.load(config.resume_checkpoint)
+            initial_completed = set(chk_data.get("completed_paths", []))
+            initial_results = SessionCheckpoint.deserialize_results(chk_data.get("results", []))
+            if not config.quiet:
+                print(f"  {Colors.GREEN}[+] Resumed From Checkpoint:{Colors.RESET} {len(initial_completed)} completed paths, {len(initial_results)} findings loaded")
+        except Exception as exc:
+            print(f"  {Colors.RED}[!] Checkpoint Load Failed  :{Colors.RESET} {exc}")
+
     # Baseline & Heuristics Calibration
     if not config.quiet:
         sys.stdout.write(f"  {Colors.YELLOW}[*] Probing target & calibrating heuristics...{Colors.RESET}\r")
         sys.stdout.flush()
 
     calib = requester.calibrate_heuristics()
+
+    # Network & DNS Diagnostics
+    network_diag: Optional[NetworkDiagResult] = None
+    if config.network_diag:
+        network_diag = NetworkDiagnostics.inspect(config.target_url, timeout=config.timeout)
 
     # Route Harvesting (robots.txt and sitemap.xml)
     harvested_routes: Set[str] = set()
@@ -454,6 +494,9 @@ def run_scanner(config: ScanConfig) -> int:
         security_audit = SecurityAuditor().audit(config.target_url, requester.base_headers)
 
     if not config.quiet:
+        if network_diag and network_diag.primary_ip:
+            rev_txt = f" ({network_diag.reverse_dns})" if network_diag.reverse_dns else ""
+            print(f"  {Colors.GREEN}[+] Network Resolution    :{Colors.RESET} {network_diag.primary_ip}{rev_txt} ({network_diag.tcp_latency_ms:.1f}ms TCP)")
         if cert_info:
             exp_col = Colors.GREEN if cert_info.days_remaining > 30 else Colors.RED
             print(f"  {Colors.GREEN}[+] TLS Certificate       :{Colors.RESET} {cert_info.issuer} ({exp_col}{cert_info.days_remaining}d left{Colors.RESET}) [{cert_info.tls_version}]")
@@ -501,6 +544,9 @@ def run_scanner(config: ScanConfig) -> int:
         on_result=on_result,
         on_progress=on_progress,
         extra_seed_paths=harvested_routes,
+        initial_completed_paths=initial_completed,
+        initial_results=initial_results,
+        checkpoint_path=config.checkpoint_file,
     )
     duration = time.perf_counter() - start_time
 
@@ -520,6 +566,7 @@ def run_scanner(config: ScanConfig) -> int:
             detected_waf=requester.detected_waf,
             security_audit=security_audit,
             cert_info=cert_info,
+            network_diag=network_diag,
             crawled_routes_count=len(harvested_routes),
         )
 
@@ -533,9 +580,13 @@ def run_scanner(config: ScanConfig) -> int:
             sitemap=engine.sitemap,
             security_audit=security_audit,
             cert_info=cert_info,
+            network_diag=network_diag,
         )
         if out_saved and not config.quiet:
             print(f"  {Colors.GREEN}[+] Report successfully exported to:{Colors.RESET} {out_saved}")
+
+    if config.checkpoint_file and not config.quiet:
+        print(f"  {Colors.GREEN}[+] Session checkpoint preserved at:{Colors.RESET} {config.checkpoint_file}")
 
     return 0 if not engine.interrupted else 130
 
@@ -545,19 +596,32 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
+    # Load target URL from checkpoint if resuming without explicit URL
+    if args.resume and not args.url and not args.profile:
+        try:
+            chk_data = SessionCheckpoint.load(args.resume)
+            args.url = chk_data.get("metadata", {}).get("target_url")
+        except Exception as exc:
+            print(f"{Colors.RED}Checkpoint Load Error: {exc}{Colors.RESET}")
+            sys.exit(1)
+
     # Load configuration from profile if requested
     if args.profile:
         try:
             config = ScanConfig.load_profile(args.profile)
             if args.url:
                 config.target_url = ScanConfig.normalize_url(args.url)
+            if args.checkpoint:
+                config.checkpoint_file = args.checkpoint
+            if args.resume:
+                config.resume_checkpoint = args.resume
         except Exception as exc:
             print(f"{Colors.RED}Profile Load Error: {exc}{Colors.RESET}")
             sys.exit(1)
     else:
         if not args.url:
             parser.print_help()
-            print(f"\n{Colors.RED}Error: Target URL (-u / --url) or --profile is required.{Colors.RESET}")
+            print(f"\n{Colors.RED}Error: Target URL (-u / --url), --profile, or --resume is required.{Colors.RESET}")
             sys.exit(1)
 
         # Parse extensions
@@ -573,6 +637,8 @@ def main() -> None:
         match_lines = parse_csv_ints(args.match_lines)
         filter_lines = parse_csv_ints(args.filter_lines)
 
+        verify_ssl = args.verify_ssl and not args.insecure
+
         try:
             config = ScanConfig(
                 target_url=args.url,
@@ -584,7 +650,7 @@ def main() -> None:
                 headers=parse_headers_list(args.headers),
                 cookies=args.cookie,
                 proxy=args.proxy,
-                verify_ssl=args.verify_ssl,
+                verify_ssl=verify_ssl,
                 follow_redirects=args.follow_redirects,
                 match_codes=match_codes,
                 filter_codes=filter_codes,
@@ -615,6 +681,9 @@ def main() -> None:
                 harvest_routes=not args.no_harvest,
                 security_audit=not args.no_audit,
                 cert_inspect=not args.no_cert,
+                network_diag=not args.no_net_diag,
+                checkpoint_file=args.checkpoint,
+                resume_checkpoint=args.resume,
             )
         except Exception as exc:
             print(f"{Colors.RED}Configuration Error: {exc}{Colors.RESET}")

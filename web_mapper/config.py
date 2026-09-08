@@ -89,6 +89,9 @@ class ScanConfig:
     harvest_routes: bool = True
     security_audit: bool = True
     cert_inspect: bool = True
+    network_diag: bool = True
+    checkpoint_file: Optional[str] = None
+    resume_checkpoint: Optional[str] = None
 
     def __post_init__(self) -> None:
 
@@ -120,6 +123,9 @@ class ScanConfig:
             raise ValueError("Delay cannot be negative.")
         if self.max_depth < 1:
             raise ValueError("Recursion depth must be at least 1.")
+
+        if self.case_transform and self.case_transform not in ("lower", "upper", "title"):
+            raise ValueError(f"Unsupported case transform: '{self.case_transform}' (Choices: lower, upper, title)")
 
         supported_formats = {"table", "html", "json", "csv", "markdown", "txt"}
         if self.output_format not in supported_formats:
@@ -172,6 +178,9 @@ class ScanConfig:
             "harvest_routes": self.harvest_routes,
             "security_audit": self.security_audit,
             "cert_inspect": self.cert_inspect,
+            "network_diag": self.network_diag,
+            "checkpoint_file": self.checkpoint_file,
+            "resume_checkpoint": self.resume_checkpoint,
             "author": __author__,
         }
 

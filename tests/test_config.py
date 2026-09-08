@@ -24,6 +24,10 @@ class TestScanConfig(unittest.TestCase):
         with self.assertRaises(ValueError):
             ScanConfig(target_url="https://example.com", threads=0)
 
+    def test_invalid_case_transform(self):
+        with self.assertRaises(ValueError):
+            ScanConfig(target_url="https://example.com", case_transform="invalid_mode")
+
     def test_profile_serialization(self):
         cfg = ScanConfig(target_url="https://example.com", threads=30, extensions=["php", "html"])
         import tempfile

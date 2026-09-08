@@ -67,3 +67,17 @@ class SessionCheckpoint:
             data = json.load(f)
 
         return data
+
+    @staticmethod
+    def deserialize_results(raw_results: List[Dict[str, Any]]) -> List[ScanResult]:
+        """Reconstruct ScanResult objects from serialized dictionary items."""
+        deserialized: List[ScanResult] = []
+        for item in raw_results:
+            clean = dict(item)
+            clean.pop("author", None)
+            # Backward-compatibility for any missing fields
+            if "discovered_links" not in clean:
+                clean["discovered_links"] = []
+            deserialized.append(ScanResult(**clean))
+        return deserialized
+

@@ -46,9 +46,12 @@ class ExecutionEngine:
         on_result: Optional[Callable[[ScanResult], None]] = None,
         on_progress: Optional[Callable[[int, int, float, float, str, int], None]] = None,
         extra_seed_paths: Optional[Set[str]] = None,
+        initial_completed_paths: Optional[Set[str]] = None,
+        initial_results: Optional[List[ScanResult]] = None,
+        checkpoint_path: Optional[str] = None,
     ) -> List[ScanResult]:
         """
-        Execute the scan with concurrency and optional recursive expansion.
+        Execute the scan with concurrency, resumption, and dynamic route expansion.
         Authored by Ahmed Wael.
         """
         self.start_time = time.perf_counter()
@@ -57,14 +60,23 @@ class ExecutionEngine:
         self.total_requests = 0
         self.interrupted = False
 
+        if initial_completed_paths:
+            self.visited_paths.update(initial_completed_paths)
+
+        if initial_results:
+            self.results.extend(initial_results)
+            for r in initial_results:
+                self.sitemap.add_result(r)
+
         # Queue of tuples: (path_to_probe, recursion_depth, parent_dir)
         queue: Deque[Tuple[str, int, str]] = deque()
 
         # Seed root paths from generator
         initial_paths = self.generator.get_all_paths(base_prefix="")
         for p in initial_paths:
-            queue.append((p, 0, ""))
-            self.visited_paths.add(p)
+            if p not in self.visited_paths:
+                queue.append((p, 0, ""))
+                self.visited_paths.add(p)
 
         # Seed extra paths harvested from crawler (robots.txt, sitemap.xml)
         if extra_seed_paths:
@@ -73,9 +85,6 @@ class ExecutionEngine:
                 if clean_ep not in self.visited_paths:
                     queue.append((clean_ep, 0, ""))
                     self.visited_paths.add(clean_ep)
-
-        total_enqueued = len(queue)
-
 
         try:
             with ThreadPoolExecutor(max_workers=self.config.threads) as executor:
@@ -107,9 +116,17 @@ class ExecutionEngine:
                             if on_result:
                                 on_result(res)
 
-                            # Handle Recursive Enqueuing
+                            # Handle dynamic HTML in-scope link expansion
+                            if res.discovered_links and depth < self.config.max_depth:
+                                for dl in res.discovered_links:
+                                    clean_dl = "/" + dl.lstrip("/")
+                                    if clean_dl not in self.visited_paths:
+                                        self.visited_paths.add(clean_dl)
+                                        queue.append((clean_dl, depth + 1, res.path))
+
+                            # Handle Recursive Directory Enqueuing
                             if self.config.recursive and depth < self.config.max_depth:
-                                self._check_and_enqueue_recursive(res, depth, queue, total_enqueued)
+                                self._check_and_enqueue_recursive(res, depth, queue)
 
                         # Progress callback
                         if on_progress:
@@ -129,6 +146,17 @@ class ExecutionEngine:
 
         except KeyboardInterrupt:
             self.interrupted = True
+        finally:
+            if checkpoint_path:
+                from .checkpoint import SessionCheckpoint
+                elapsed = time.perf_counter() - self.start_time
+                SessionCheckpoint.save(
+                    filepath=checkpoint_path,
+                    target_url=self.config.target_url,
+                    completed_paths=self.visited_paths,
+                    results=self.results,
+                    duration_sec=elapsed,
+                )
 
         return self.results
 
@@ -137,7 +165,6 @@ class ExecutionEngine:
         res: ScanResult,
         current_depth: int,
         queue: Deque[Tuple[str, int, str]],
-        total_enqueued: int,
     ) -> None:
         """
         Evaluate if a discovered path qualifies as a directory for recursive exploration.

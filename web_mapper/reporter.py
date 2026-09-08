@@ -19,6 +19,7 @@ from typing import Dict, List, Optional, Set
 
 from .cert_inspector import CertificateInfo
 from .config import ScanConfig
+from .network_diag import NetworkDiagResult
 from .requester import ScanResult
 from .security_audit import SecurityAuditResult
 from .sitemap import SiteMapTree
@@ -116,6 +117,7 @@ class ScanReporter:
         detected_waf: Optional[str] = None,
         security_audit: Optional[SecurityAuditResult] = None,
         cert_info: Optional[CertificateInfo] = None,
+        network_diag: Optional[NetworkDiagResult] = None,
         crawled_routes_count: int = 0,
     ) -> None:
         """Display comprehensive scan summary, security posture, and hierarchy."""
@@ -130,6 +132,10 @@ class ScanReporter:
         print(f"{Colors.BOLD}  SCAN SUMMARY & METRICS{Colors.RESET}")
         print(f"{Colors.BLUE}{'=' * 74}{Colors.RESET}")
         print(f"  Target Host       : {self.config.target_url}")
+        if network_diag and network_diag.primary_ip:
+            rev_str = f" ({network_diag.reverse_dns})" if network_diag.reverse_dns else ""
+            cname_str = f" [CNAME: {network_diag.canonical_name}]" if network_diag.canonical_name and network_diag.canonical_name != network_diag.hostname else ""
+            print(f"  Network Host      : {Colors.CYAN}{network_diag.primary_ip}{Colors.RESET}{rev_str}{cname_str} ({network_diag.tcp_latency_ms:.1f}ms TCP)")
         print(f"  Discovered Routes : {Colors.GREEN}{len(results)}{Colors.RESET}")
         print(f"  Total Requests    : {total_requests}")
         print(f"  Elapsed Duration  : {duration_sec:.2f}s ({req_per_sec:.1f} req/s)")
@@ -170,6 +176,7 @@ class ScanReporter:
         sitemap: Optional[SiteMapTree] = None,
         security_audit: Optional[SecurityAuditResult] = None,
         cert_info: Optional[CertificateInfo] = None,
+        network_diag: Optional[NetworkDiagResult] = None,
     ) -> Optional[Path]:
         """Export results to configured destination file."""
         if not self.config.output_file:
@@ -180,13 +187,13 @@ class ScanReporter:
         fmt = self.config.output_format.lower()
 
         if fmt == "html":
-            self._save_html(out_path, results, duration_sec, detected_techs, detected_waf, sitemap, security_audit, cert_info)
+            self._save_html(out_path, results, duration_sec, detected_techs, detected_waf, sitemap, security_audit, cert_info, network_diag)
         elif fmt == "json":
-            self._save_json(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info)
+            self._save_json(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag)
         elif fmt == "csv":
             self._save_csv(out_path, results)
         elif fmt == "markdown":
-            self._save_markdown(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info)
+            self._save_markdown(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag)
         else:
             self._save_txt(out_path, results)
 
@@ -201,6 +208,7 @@ class ScanReporter:
         waf: Optional[str],
         sec: Optional[SecurityAuditResult],
         cert: Optional[CertificateInfo],
+        network_diag: Optional[NetworkDiagResult] = None,
     ) -> None:
         latencies = [r.response_time_ms for r in results]
         data = {
@@ -215,6 +223,7 @@ class ScanReporter:
                 "detected_technologies": techs or [],
                 "detected_waf": waf,
                 "latency_percentiles": calculate_latency_percentiles(latencies),
+                "network_diagnostics": network_diag.to_dict() if network_diag else None,
                 "tls_certificate": cert.to_dict() if cert else None,
                 "security_audit": sec.to_dict() if sec else None,
             },
@@ -258,6 +267,7 @@ class ScanReporter:
         waf: Optional[str],
         sec: Optional[SecurityAuditResult],
         cert: Optional[CertificateInfo],
+        network_diag: Optional[NetworkDiagResult] = None,
     ) -> None:
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# WebAdminMapper Audit Report\n\n")
@@ -266,6 +276,9 @@ class ScanReporter:
             f.write(f"- **Scan Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
             f.write(f"- **Duration:** {duration_sec:.2f} seconds\n")
             f.write(f"- **Total Discovered Routes:** {len(results)}\n")
+            if network_diag and network_diag.primary_ip:
+                rev_txt = f" ({network_diag.reverse_dns})" if network_diag.reverse_dns else ""
+                f.write(f"- **Host Resolution:** `{network_diag.primary_ip}`{rev_txt} (Latency: {network_diag.tcp_latency_ms:.1f}ms)\n")
             if waf:
                 f.write(f"- **WAF Protection:** {waf}\n")
             if techs:
@@ -313,6 +326,7 @@ class ScanReporter:
         sitemap: Optional[SiteMapTree],
         sec: Optional[SecurityAuditResult],
         cert: Optional[CertificateInfo],
+        network_diag: Optional[NetworkDiagResult] = None,
     ) -> None:
         """Generate a sleek, responsive HTML dashboard report."""
         tech_badges = "".join(f'<span class="badge badge-tech">{html.escape(t)}</span>' for t in (techs or [])) or "<em>None detected</em>"
@@ -321,6 +335,22 @@ class ScanReporter:
 
         latencies = [r.response_time_ms for r in results]
         lat_stats = calculate_latency_percentiles(latencies)
+
+        net_html = ""
+        if network_diag and network_diag.primary_ip:
+            rev_info = f" &bull; <strong>Reverse:</strong> {html.escape(network_diag.reverse_dns)}" if network_diag.reverse_dns else ""
+            cname_info = f" &bull; <strong>CNAME:</strong> {html.escape(network_diag.canonical_name)}" if network_diag.canonical_name and network_diag.canonical_name != network_diag.hostname else ""
+            net_html = f"""
+            <div class="metric-card">
+              <div class="metric-title">Network Diagnostics</div>
+              <div style="font-size: 14px; margin-top: 6px;">
+                <strong>IP:</strong> <code>{html.escape(network_diag.primary_ip)}</code>{rev_info}{cname_info}
+              </div>
+              <div style="font-size: 12px; color: #8b949e; margin-top: 4px;">
+                <strong>TCP Latency:</strong> {network_diag.tcp_latency_ms:.1f} ms &bull; <strong>Port:</strong> {network_diag.port}
+              </div>
+            </div>
+            """
 
         sec_grade_html = ""
         sec_findings_html = ""
@@ -463,6 +493,7 @@ class ScanReporter:
         </div>
         ''' if sec_grade_html else ''}
         {cert_html}
+        {net_html}
       </div>
       <div style="margin-top: 16px; font-size: 14px;">
         <strong>WAF/CDN:</strong> {waf_badge} &bull; 
