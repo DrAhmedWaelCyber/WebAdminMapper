@@ -9,8 +9,8 @@
 [![Dependencies](https://img.shields.io/badge/Dependencies-Zero%20(Standard%20Library)-brightgreen.svg)]()
 
 **Developer & Author:** **Ahmed Wael**  
-**Contact:** `contact@ahmedwael.dev`  
-**Location:** `/Users/ahmedweal/Desktop/WebAdminMapper`  
+**Contact:** `ahmedwael6143@gmail.com`  
+
 
 ---
 
@@ -110,20 +110,21 @@ The codebase is organized into cleanly separated single-responsibility modules:
 
 | Module | Source Path | Description |
 | :--- | :--- | :--- |
-| **CLI Controller** | [`web_mapper/cli.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/cli.py) | Parses arguments, manages live terminal UI, displays ANSI status tables, and coordinates execution. |
-| **Configuration** | [`web_mapper/config.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/config.py) | Enforces strict validation, normalizes URLs, manages filters, and serializes/deserializes JSON scan profiles. |
-| **Execution Engine** | [`web_mapper/engine.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/engine.py) | Coordinates thread pools, batches requests, handles recursive directory queues, and updates progress counters. |
-| **HTTP Requester** | [`web_mapper/requester.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/requester.py) | Low-level network requester, custom redirect handlers, SSL bypass/enforcement, title extraction, and MD5/SHA-256 body hashing. |
-| **Path Generator** | [`web_mapper/generator.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/generator.py) | Compiles curated wordlists, processes STDIN pipelines, mutates prefixes/suffixes, transforms casing, and permutes extensions. |
-| **Heuristics & Soft-404** | [`web_mapper/heuristics.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/heuristics.py) | Multi-sample baseline probes, word/line count comparison, Jaccard token similarity clustering, and WAF identification. |
-| **Tech Fingerprinting** | [`web_mapper/fingerprint.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/fingerprint.py) | Identifies servers (Nginx, Apache, IIS, Caddy), frameworks (Laravel, Django, Spring Boot, Express), and CMS systems (WordPress, Drupal). |
-| **Security Posture** | [`web_mapper/security_audit.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/security_audit.py) | Evaluates defensive HTTP headers (HSTS, CSP, XFO, nosniff), cookie attributes, and information leaks, calculating a 0–100 score and letter grade. |
-| **TLS Cert Inspector** | [`web_mapper/cert_inspector.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/cert_inspector.py) | Inspects certificate authorities, validity dates, days until expiry, cipher suites, TLS version, and Subject Alternative Names (SANs). |
-| **Route Harvester** | [`web_mapper/crawler.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/crawler.py) | Extracts routes from `/robots.txt` (Disallow/Allow), `/sitemap.xml` (`<loc>`), and in-scope HTML links/scripts. |
-| **Site Map Visualizer** | [`web_mapper/sitemap.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/sitemap.py) | Constructs an in-memory N-ary tree from discovered paths and renders formatted ASCII directory trees. |
-| **Reporter & Exporters** | [`web_mapper/reporter.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/reporter.py) | Generates dark-themed interactive HTML reports, structured JSON data, CSV spreadsheets, Markdown documentation, and terminal tables. |
-| **Session Checkpoint** | [`web_mapper/checkpoint.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/checkpoint.py) | Serializes scan state to disk for checkpointing and resuming long-running audits. |
-| **Network Diagnostics** | [`web_mapper/network_diag.py`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/network_diag.py) | Resolves IPv4/IPv6 addresses, canonical CNAME records, reverse DNS hostnames, and measures TCP connect latency. |
+| **CLI Controller** | [`web_mapper/cli.py`](web_mapper/cli.py) | Parses arguments, manages live terminal UI, displays ANSI status tables, and coordinates execution. |
+| **Configuration** | [`web_mapper/config.py`](web_mapper/config.py) | Enforces strict validation, normalizes URLs, manages filters, and serializes/deserializes JSON scan profiles. |
+| **Execution Engine** | [`web_mapper/engine.py`](web_mapper/engine.py) | Coordinates thread pools, batches requests, handles recursive directory queues, and updates progress counters. |
+| **HTTP Requester** | [`web_mapper/requester.py`](web_mapper/requester.py) | Low-level network requester, custom redirect handlers, SSL bypass/enforcement, title extraction, and MD5/SHA-256 body hashing. |
+| **Path Generator** | [`web_mapper/generator.py`](web_mapper/generator.py) | Compiles curated wordlists, processes STDIN pipelines, mutates prefixes/suffixes, transforms casing, and permutes extensions. |
+| **Heuristics & Soft-404** | [`web_mapper/heuristics.py`](web_mapper/heuristics.py) | Multi-sample baseline probes, word/line count comparison, Jaccard token similarity clustering, and WAF identification. |
+| **Tech Fingerprinting** | [`web_mapper/fingerprint.py`](web_mapper/fingerprint.py) | Identifies servers (Nginx, Apache, IIS, Caddy), frameworks (Laravel, Django, Spring Boot, Express), and CMS systems (WordPress, Drupal). |
+| **Security Posture** | [`web_mapper/security_audit.py`](web_mapper/security_audit.py) | Evaluates defensive HTTP headers (HSTS, CSP, XFO, nosniff), cookie attributes, and information leaks, calculating a 0–100 score and letter grade. |
+| **TLS Cert Inspector** | [`web_mapper/cert_inspector.py`](web_mapper/cert_inspector.py) | Inspects certificate authorities, validity dates, days until expiry, cipher suites, TLS version, and Subject Alternative Names (SANs). |
+| **Route Harvester** | [`web_mapper/crawler.py`](web_mapper/crawler.py) | Extracts routes from `/robots.txt` (Disallow/Allow), `/sitemap.xml` (`<loc>`), and in-scope HTML links/scripts. |
+| **Site Map Visualizer** | [`web_mapper/sitemap.py`](web_mapper/sitemap.py) | Constructs an in-memory N-ary tree from discovered paths and renders formatted ASCII directory trees. |
+| **Reporter & Exporters** | [`web_mapper/reporter.py`](web_mapper/reporter.py) | Generates dark-themed interactive HTML reports, structured JSON data, CSV spreadsheets, Markdown documentation, and terminal tables. |
+| **Session Checkpoint** | [`web_mapper/checkpoint.py`](web_mapper/checkpoint.py) | Serializes scan state to disk for checkpointing and resuming long-running audits. |
+| **Network Diagnostics** | [`web_mapper/network_diag.py`](web_mapper/network_diag.py) | Resolves IPv4/IPv6 addresses, canonical CNAME records, reverse DNS hostnames, and measures TCP connect latency. |
+
 
 ---
 
@@ -271,12 +272,13 @@ webadminmapper -u https://example.com
 
 ## 📚 Wordlist Catalogs & Mutation Strategies
 
-WebAdminMapper includes four curated catalogs in [`web_mapper/wordlists/`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/wordlists):
+WebAdminMapper includes four curated catalogs in [`web_mapper/wordlists/`](web_mapper/wordlists):
 
-1. **Administrative Portals ([`admin_paths.txt`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/wordlists/admin_paths.txt))**: ~300 entries covering administrative control centers (`/admin`, `/cpanel`, `/dashboard`, `/backend`, `/administrator`, `/manager`, `/kibana`, `/grafana`, `/jenkins`).
-2. **Common Directories ([`common_dirs.txt`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/wordlists/common_dirs.txt))**: ~300 entries covering common directory structures, asset paths, API routes, and file repositories.
-3. **Sensitive Files & Backups ([`sensitive_files.txt`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/wordlists/sensitive_files.txt))**: ~250 entries targeting `.env`, `.git/HEAD`, database dumps (`.sql`), compressed archives (`.zip`, `.tar.gz`), and server configuration files.
-4. **Cloud & DevOps ([`cloud_devops.txt`](file:///Users/ahmedweal/Desktop/WebAdminMapper/web_mapper/wordlists/cloud_devops.txt))**: ~150 entries covering AWS metadata endpoints, Spring Boot Actuator (`/actuator/health`, `/actuator/env`), Kubernetes, Swagger/OpenAPI docs, and GraphQL schemas.
+1. **Administrative Portals ([`admin_paths.txt`](web_mapper/wordlists/admin_paths.txt))**: ~300 entries covering administrative control centers (`/admin`, `/cpanel`, `/dashboard`, `/backend`, `/administrator`, `/manager`, `/kibana`, `/grafana`, `/jenkins`).
+2. **Common Directories ([`common_dirs.txt`](web_mapper/wordlists/common_dirs.txt))**: ~300 entries covering common directory structures, asset paths, API routes, and file repositories.
+3. **Sensitive Files & Backups ([`sensitive_files.txt`](web_mapper/wordlists/sensitive_files.txt))**: ~250 entries targeting `.env`, `.git/HEAD`, database dumps (`.sql`), compressed archives (`.zip`, `.tar.gz`), and server configuration files.
+4. **Cloud & DevOps ([`cloud_devops.txt`](web_mapper/wordlists/cloud_devops.txt))**: ~150 entries covering AWS metadata endpoints, Spring Boot Actuator (`/actuator/health`, `/actuator/env`), Kubernetes, Swagger/OpenAPI docs, and GraphQL schemas.
+
 
 ---
 
@@ -379,7 +381,8 @@ if requester.base_headers:
 
 ## 🧪 Automated Test Suite
 
-WebAdminMapper includes a native unit test suite in [`tests/`](file:///Users/ahmedweal/Desktop/WebAdminMapper/tests), requiring zero external testing frameworks.
+WebAdminMapper includes a native unit test suite in [`tests/`](tests), requiring zero external testing frameworks.
+
 
 Run the test suite:
 ```bash
@@ -401,8 +404,9 @@ OK
 ## 👤 Author Attribution & Legal Disclaimer
 
 - **Lead Developer & Author:** **Ahmed Wael**
-- **Email:** `contact@ahmedwael.dev`
+- **Email:** `ahmedwael6143@gmail.com`
 - **Copyright:** (c) 2026, Ahmed Wael. All rights reserved.
+
 
 ### Legal Disclaimer
 **WebAdminMapper** is authored by **Ahmed Wael** strictly for authorized administrative discovery, educational research, defensive infrastructure evaluation, and legitimate security assessments. Scanning targets without prior written authorization from the system owner is illegal. The author assumes no liability for misuse of this software.

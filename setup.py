@@ -13,7 +13,8 @@ setup(
     name="webadminmapper",
     version="1.0.0",
     author="Ahmed Wael",
-    author_email="contact@ahmedwael.dev",
+    author_email="ahmedwael6143@gmail.com",
+
     description="A professional multi-file Python utility for web administration, directory mapping, and file structure discovery.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
