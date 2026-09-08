@@ -28,7 +28,7 @@ from .security_assertions import SecurityAssertion, SecurityAssertionValidator
 from .security_audit import SecurityAuditor, SecurityAuditResult
 
 __author__ = "Ahmed Wael"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __copyright__ = "Copyright (c) 2026, Ahmed Wael"
 
 BANNER = rf"""{Colors.CYAN}{Colors.BOLD}

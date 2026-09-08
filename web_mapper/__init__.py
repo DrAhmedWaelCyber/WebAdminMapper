@@ -9,7 +9,7 @@ Copyright (c) 2026, Ahmed Wael. All rights reserved.
 """
 
 __author__ = "Ahmed Wael"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __email__ = "ahmedwael6143@gmail.com"
 __status__ = "Production"
 

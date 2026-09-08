@@ -12,7 +12,7 @@ import sys
 from web_mapper.cli import main
 
 __author__ = "Ahmed Wael"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __copyright__ = "Copyright (c) 2026, Ahmed Wael"
 
 if __name__ == "__main__":

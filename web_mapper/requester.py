@@ -126,6 +126,12 @@ class HTTPRequester:
         self.discovered_techs: List[str] = []
         self.detected_waf: Optional[str] = None
         self.base_headers: Dict[str, str] = {}
+        self.error_counts: Dict[str, int] = {
+            "timeouts": 0,
+            "ssl_errors": 0,
+            "connection_errors": 0,
+            "unexpected_errors": 0,
+        }
 
         # Precompiled regex filters
 
@@ -219,6 +225,8 @@ class HTTPRequester:
                 body = err.read()
             except Exception:
                 body = b""
+            finally:
+                err.close()
             title = self._extract_title(body)
             return (err.code, body, title)
         except Exception:
@@ -273,15 +281,31 @@ class HTTPRequester:
                     err_body = err.read()
                 except Exception:
                     err_body = b""
+                finally:
+                    err.close()
                 return self._process_response(
                     clean_path, full_url, status_code, headers, err_body, elapsed_ms
                 )
 
-            except (urllib.error.URLError, socket.timeout, TimeoutError, http.client.RemoteDisconnected):
+            except (socket.timeout, TimeoutError) as err:
                 if attempts < max_attempts:
                     continue
+                self.error_counts["timeouts"] += 1
                 return None
-            except Exception:
+            except (ssl.SSLError, ssl.CertificateError) as err:
+                if attempts < max_attempts:
+                    continue
+                self.error_counts["ssl_errors"] += 1
+                return None
+            except (urllib.error.URLError, http.client.RemoteDisconnected, ConnectionError) as err:
+                if attempts < max_attempts:
+                    continue
+                self.error_counts["connection_errors"] += 1
+                return None
+            except Exception as err:
+                self.error_counts["unexpected_errors"] += 1
+                import sys
+                sys.stderr.write(f"[WebAdminMapper Requester] Warning: Unexpected error requesting {full_url}: {type(err).__name__}: {err}\n")
                 return None
 
         return None
@@ -408,6 +432,8 @@ class HTTPRequester:
                 body = err.read()
             except Exception:
                 body = b""
+            finally:
+                err.close()
         except Exception:
             return None
 

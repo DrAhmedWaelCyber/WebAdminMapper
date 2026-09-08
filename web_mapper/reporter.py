@@ -324,6 +324,8 @@ class ScanReporter:
 
             if compliance_report:
                 f.write("\n### Defensive Security Assessment & Compliance Baseline Audit\n\n")
+                if getattr(compliance_report, "disclaimer", None):
+                    f.write(f"> **Notice:** {compliance_report.disclaimer}\n\n")
                 f.write(f"- **Standard / Benchmark:** `{compliance_report.benchmark.upper()}`\n")
                 f.write(f"- **Compliance Grade:** **{compliance_report.compliance_grade}** ({compliance_report.compliance_score:.1f}%)\n")
                 f.write(f"- **Control Statistics:** {compliance_report.passed_rules} Passed, {compliance_report.failed_rules} Failed\n")
@@ -331,10 +333,11 @@ class ScanReporter:
                     bm_line = " | ".join(f"{k}: {v}%" for k, v in compliance_report.benchmark_scores.items())
                     f.write(f"- **Benchmark Breakdown:** {bm_line}\n")
                 if compliance_report.findings:
-                    f.write("\n| Rule ID | Benchmark | Severity | Status | Control Title | Endpoint | Remediation |\n")
-                    f.write("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
+                    f.write("\n| Rule ID | Benchmark | Severity | Status | Control Title | Endpoint | Evidence | Limitations | Remediation |\n")
+                    f.write("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
                     for cf in compliance_report.findings:
-                        f.write(f"| `{cf.rule_id}` | {cf.benchmark} | `{cf.severity}` | `{cf.status}` | **{cf.title}** | `{cf.endpoint}` | {cf.remediation} |\n")
+                        lim = getattr(cf, "limitations", "") or "N/A"
+                        f.write(f"| `{cf.rule_id}` | {cf.benchmark} | `{cf.severity}` | `{cf.status}` | **{cf.title}** | `{cf.endpoint}` | {cf.evidence} | {lim} | {cf.remediation} |\n")
 
             if security_assertions:
                 f.write("\n### Automated Security Assertions & Vulnerability Validations\n\n")
@@ -425,6 +428,7 @@ class ScanReporter:
                 cf_rows = []
                 for cf in compliance_report.findings:
                     badge = "st-5xx" if cf.severity == "HIGH" else "st-4xx" if cf.severity == "MEDIUM" else "st-3xx"
+                    lim_text = getattr(cf, "limitations", "") or "N/A"
                     cf_rows.append(f"""
                     <tr>
                       <td><code>{html.escape(cf.rule_id)}</code></td>
@@ -433,14 +437,23 @@ class ScanReporter:
                       <td><strong>{html.escape(cf.title)}</strong></td>
                       <td><code>{html.escape(cf.endpoint)}</code></td>
                       <td><span style="font-size: 12px; color: #8b949e;">{html.escape(cf.evidence)}</span></td>
+                      <td><span style="font-size: 12px; color: #8b949e;">{html.escape(lim_text)}</span></td>
                       <td><code style="color: #7ee787;">{html.escape(cf.remediation)}</code></td>
                     </tr>
                     """)
+                disclaimer_html = ""
+                if getattr(compliance_report, "disclaimer", None):
+                    disclaimer_html = f"""
+                  <div style="padding: 12px 16px; font-size: 13px; color: #8b949e; background: #161b22; border-bottom: 1px solid var(--border);">
+                    <strong>Notice:</strong> {html.escape(compliance_report.disclaimer)}
+                  </div>
+                    """
                 comp_table_html = f"""
                 <div class="table-container" style="margin-bottom: 24px;">
                   <div style="padding: 16px; font-weight: bold; font-size: 16px; border-bottom: 1px solid var(--border);">
                     📋 Defensive Security Compliance Baseline Audit ({len(compliance_report.findings)} Findings) &bull; Standard: {html.escape(compliance_report.benchmark.upper())}
                   </div>
+                  {disclaimer_html}
                   <table>
                     <thead>
                       <tr>
@@ -450,6 +463,7 @@ class ScanReporter:
                         <th>Control Title</th>
                         <th>Endpoint</th>
                         <th>Evidence</th>
+                        <th>Limitations</th>
                         <th>Defensive Remediation</th>
                       </tr>
                     </thead>

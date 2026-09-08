@@ -8,12 +8,16 @@ Developer & Author: Ahmed Wael
 Copyright (c) 2026, Ahmed Wael. All rights reserved.
 """
 
+import http.client
 import os
+import socket
+import ssl
 import sys
 import time
+import urllib.error
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable, Deque, List, Optional, Set, Tuple
+from typing import Callable, Deque, Dict, List, Optional, Set, Tuple
 
 from .config import ScanConfig
 from .generator import PathGenerator
@@ -38,8 +42,15 @@ class ExecutionEngine:
         self.results: List[ScanResult] = []
         self.visited_paths: Set[str] = set()
         self.total_requests = 0
+        self.total_enqueued = 0
         self.start_time: float = 0.0
         self.interrupted: bool = False
+        self.error_stats: Dict[str, int] = {
+            "timeouts": 0,
+            "ssl_errors": 0,
+            "connection_errors": 0,
+            "unexpected_errors": 0,
+        }
 
     def run(
         self,
@@ -86,6 +97,8 @@ class ExecutionEngine:
                     queue.append((clean_ep, 0, ""))
                     self.visited_paths.add(clean_ep)
 
+        self.total_enqueued = len(queue)
+
         try:
             with ThreadPoolExecutor(max_workers=self.config.threads) as executor:
                 # Process in batches to keep memory bounded and allow dynamic enqueuing
@@ -107,7 +120,21 @@ class ExecutionEngine:
 
                         try:
                             res = future.result()
-                        except Exception:
+                        except (socket.timeout, TimeoutError) as exc:
+                            self.error_stats["timeouts"] += 1
+                            res = None
+                        except (ssl.SSLError, ssl.CertificateError) as exc:
+                            self.error_stats["ssl_errors"] += 1
+                            res = None
+                        except (urllib.error.URLError, ConnectionError, http.client.RemoteDisconnected) as exc:
+                            self.error_stats["connection_errors"] += 1
+                            res = None
+                        except Exception as exc:
+                            self.error_stats["unexpected_errors"] += 1
+                            sys.stderr.write(
+                                f"[WebAdminMapper Engine] Warning: Unexpected exception during probe of {path}: "
+                                f"{type(exc).__name__}: {exc}\n"
+                            )
                             res = None
 
                         if res:
@@ -123,6 +150,7 @@ class ExecutionEngine:
                                     if clean_dl not in self.visited_paths:
                                         self.visited_paths.add(clean_dl)
                                         queue.append((clean_dl, depth + 1, res.path))
+                                        self.total_enqueued += 1
 
                             # Handle Recursive Directory Enqueuing
                             if self.config.recursive and depth < self.config.max_depth:
@@ -134,10 +162,11 @@ class ExecutionEngine:
                             elapsed = max(0.001, now - self.start_time)
                             speed = self.total_requests / elapsed
                             remaining = max(0, len(queue))
+                            total_estimate = max(self.total_enqueued, self.total_requests + remaining)
                             eta = remaining / speed if speed > 0 else 0.0
                             on_progress(
                                 self.total_requests,
-                                self.total_requests + remaining,
+                                total_estimate,
                                 speed,
                                 eta,
                                 path,
@@ -147,6 +176,10 @@ class ExecutionEngine:
         except KeyboardInterrupt:
             self.interrupted = True
         finally:
+            if hasattr(self.requester, "error_counts"):
+                for k, v in self.requester.error_counts.items():
+                    self.error_stats[k] = self.error_stats.get(k, 0) + v
+
             if checkpoint_path:
                 from .checkpoint import SessionCheckpoint
                 elapsed = time.perf_counter() - self.start_time
@@ -192,3 +225,4 @@ class ExecutionEngine:
             if sp not in self.visited_paths:
                 self.visited_paths.add(sp)
                 queue.append((sp, current_depth + 1, clean_path))
+                self.total_enqueued += 1

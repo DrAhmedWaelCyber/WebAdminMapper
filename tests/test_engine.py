@@ -78,6 +78,62 @@ class TestExecutionEngine(unittest.TestCase):
             self.assertEqual(loaded["metadata"]["target_url"], "https://example.com")
             self.assertTrue(len(loaded["completed_paths"]) > 0)
 
+    def test_engine_exception_classification(self):
+        import socket
+        import ssl
+        import urllib.error
+
+        config = ScanConfig(target_url="https://example.com", threads=1)
+        mock_requester = MagicMock(spec=HTTPRequester)
+        mock_requester.error_counts = {"timeouts": 0, "ssl_errors": 0, "connection_errors": 0, "unexpected_errors": 0}
+
+        calls = [0]
+        def side_effect(path):
+            calls[0] += 1
+            if calls[0] == 1:
+                raise socket.timeout("timed out")
+            elif calls[0] == 2:
+                raise ssl.SSLError("certificate verify failed")
+            elif calls[0] == 3:
+                raise urllib.error.URLError("connection refused")
+            raise RuntimeError("unexpected failure")
+
+        mock_requester.probe_path.side_effect = side_effect
+        engine = ExecutionEngine(config, mock_requester)
+
+        all_gen = set(engine.generator.get_all_paths())
+        engine.run(initial_completed_paths=all_gen, extra_seed_paths={"/t1", "/t2", "/t3", "/t4"})
+
+        self.assertGreaterEqual(engine.error_stats["timeouts"], 1)
+        self.assertGreaterEqual(engine.error_stats["ssl_errors"], 1)
+        self.assertGreaterEqual(engine.error_stats["connection_errors"], 1)
+        self.assertGreaterEqual(engine.error_stats["unexpected_errors"], 1)
+
+    def test_total_enqueued_tracking(self):
+        config = ScanConfig(target_url="https://example.com", threads=1, recursive=True, max_depth=2)
+        mock_requester = MagicMock(spec=HTTPRequester)
+        mock_requester.error_counts = {"timeouts": 0, "ssl_errors": 0, "connection_errors": 0, "unexpected_errors": 0}
+
+        def side_effect(path):
+            if path == "/admin":
+                return ScanResult(
+                    path="/admin",
+                    url="https://example.com/admin",
+                    status_code=200,
+                    content_length=100,
+                    response_time_ms=5.0,
+                )
+            return None
+
+        mock_requester.probe_path.side_effect = side_effect
+        engine = ExecutionEngine(config, mock_requester)
+        all_gen = set(engine.generator.get_all_paths())
+        initial_completed = all_gen - {"/admin"}
+
+        engine.run(initial_completed_paths=initial_completed, extra_seed_paths={"/admin"})
+        # Should have tracked initial enqueued + recursive subpaths
+        self.assertGreater(engine.total_enqueued, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

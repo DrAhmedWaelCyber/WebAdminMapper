@@ -11,7 +11,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="webadminmapper",
-    version="1.0.0",
+    version="1.1.0",
     author="Ahmed Wael",
     author_email="ahmedwael6143@gmail.com",
 

@@ -218,7 +218,7 @@ class TestComplianceEngine(unittest.TestCase):
         self.assertIn("compliance_benchmark", cfg_dict)
 
     def test_compliance_report_serialization(self):
-        """Verify ComplianceReport to_dict serialization."""
+        """Verify ComplianceReport to_dict serialization including disclaimer and limitations."""
         results = [
             ScanResult(
                 path="/admin",
@@ -235,6 +235,19 @@ class TestComplianceEngine(unittest.TestCase):
         self.assertIn("compliance_grade", data)
         self.assertIn("findings", data)
         self.assertIn("summary", data)
+        self.assertIn("disclaimer", data)
+        self.assertIn("OWASP ASVS v4.0", data["disclaimer"])
+        self.assertTrue(len(report.findings) > 0)
+        for finding in report.findings:
+            self.assertTrue(hasattr(finding, "limitations"))
+            self.assertIsInstance(finding.limitations, str)
+            self.assertGreater(len(finding.limitations), 0)
+
+    def test_all_rules_have_limitations(self):
+        """Verify that every catalogued compliance rule specifies documented limitations."""
+        for rule_id, rule in self.engine_all.rules.items():
+            self.assertTrue(hasattr(rule, "limitations"), f"Rule {rule_id} missing limitations attr")
+            self.assertGreater(len(rule.limitations), 10, f"Rule {rule_id} limitations string is too short or empty")
 
 
 if __name__ == "__main__":

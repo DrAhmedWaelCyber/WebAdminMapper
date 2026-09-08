@@ -1,0 +1,83 @@
+{
+  "author": "Ahmed Wael",
+  "version": "1.1.0",
+  "timestamp": "2026-09-08T16:09:57Z",
+  "system_specifications": {
+    "os": "Darwin 25.5.0",
+    "architecture": "arm64",
+    "processor": "arm",
+    "cpu_cores": 8,
+    "python_version": "3.14.7",
+    "python_implementation": "CPython"
+  },
+  "trials": [
+    {
+      "threads": 5,
+      "total_requests": 500,
+      "successful_responses": 500,
+      "error_count": 0,
+      "error_rate_pct": 0.0,
+      "execution_time_sec": 0.151,
+      "throughput_req_sec": 3313.4,
+      "latency_stats_ms": {
+        "min": 0.28,
+        "max": 7.59,
+        "mean": 1.27,
+        "p50": 1.22,
+        "p90": 1.61,
+        "p99": 2.68
+      }
+    },
+    {
+      "threads": 10,
+      "total_requests": 500,
+      "successful_responses": 500,
+      "error_count": 0,
+      "error_rate_pct": 0.0,
+      "execution_time_sec": 0.432,
+      "throughput_req_sec": 1156.7,
+      "latency_stats_ms": {
+        "min": 0.55,
+        "max": 32.19,
+        "mean": 5.0,
+        "p50": 1.52,
+        "p90": 30.68,
+        "p99": 31.99
+      }
+    },
+    {
+      "threads": 25,
+      "total_requests": 500,
+      "successful_responses": 500,
+      "error_count": 0,
+      "error_rate_pct": 0.0,
+      "execution_time_sec": 0.512,
+      "throughput_req_sec": 977.0,
+      "latency_stats_ms": {
+        "min": 0.55,
+        "max": 125.99,
+        "mean": 12.58,
+        "p50": 1.74,
+        "p90": 33.33,
+        "p99": 124.59
+      }
+    },
+    {
+      "threads": 50,
+      "total_requests": 500,
+      "successful_responses": 500,
+      "error_count": 0,
+      "error_rate_pct": 0.0,
+      "execution_time_sec": 1.523,
+      "throughput_req_sec": 328.3,
+      "latency_stats_ms": {
+        "min": 0.62,
+        "max": 1063.27,
+        "mean": 45.05,
+        "p50": 2.02,
+        "p90": 99.02,
+        "p99": 1060.52
+      }
+    }
+  ]
+}
