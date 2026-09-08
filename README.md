@@ -29,6 +29,7 @@
    - [Route Harvesting (robots.txt & sitemap.xml)](#route-harvesting-robotstxt--sitemapxml)
    - [Interactive HTML Dashboard & Multi-Format Reporting](#interactive-html-dashboard--multi-format-reporting)
    - [Hierarchical Site Map Tree Visualizer](#hierarchical-site-map-tree-visualizer)
+   - [Automated Security Assertions & Vulnerability Validations](#automated-security-assertions--vulnerability-validations)
    - [Network Diagnostics & Latency Metrics](#network-diagnostics--latency-metrics)
    - [Session Checkpoints & State Resumption](#session-checkpoints--state-resumption)
 5. [Installation & Requirements](#-installation--requirements)
@@ -185,6 +186,14 @@ https://example.com
     └── v1 [200] (20B)
 ```
 
+### Automated Security Assertions & Vulnerability Validations
+WebAdminMapper includes an automated, non-destructive vulnerability assertion module ([`web_mapper/security_assertions.py`](web_mapper/security_assertions.py)) designed to inspect discovered endpoints for critical application vulnerabilities and configuration weaknesses:
+- **Improper Access Control**: Flags unrestricted administrative portals, dashboards, and actuator endpoints returning `200 OK` without authentication gates.
+- **Sensitive Data Exposure**: Identifies accessible backup archives (`.sql`, `.bak`, `.tar.gz`), environment configs (`.env`, `web.config`), and version control directories (`.git`).
+- **Dangerous HTTP Verbs & Tampering**: Detects `TRACE`/`TRACK` methods (enabling Cross-Site Tracing) and unauthenticated `PUT`/`DELETE` modification verbs.
+- **Verbose Banners & Information Leaks**: Inspects server version tokens, missing sensitive `Cache-Control: no-store` headers on APIs, and server-side stack traces.
+- **Injection Surface Mapping**: Catalogs active query parameters and input endpoints to map the attack surface safely without generating disruptive payloads.
+
 ### Network Diagnostics & Latency Metrics
 Measures DNS resolution, reverse DNS hostnames, TCP handshake time, and statistical response latency distributions (**Min, Max, Mean, p50, p90, p99**).
 
@@ -254,6 +263,8 @@ webadminmapper -u https://example.com
 | | `--no-net-diag`| Flag | `False` | Disable network DNS resolution and TCP latency diagnostics. |
 | | `--no-harvest` | Flag | `False` | Disable route harvesting from `robots.txt` and `sitemap.xml`. |
 | | `--no-tree` | Flag | `False` | Disable rendering the ASCII directory tree. |
+| | `--audit-vulns` | Flag | `True` | Automated non-destructive security assertions & vulnerability validations. |
+| | `--no-vuln-validate` | Flag | `False` | Disable automated security assertions and vulnerability validation. |
 | | `--no-title` | Flag | `False` | Disable HTML page title extraction. |
 | **HTTP Customization** | | | | |
 | `-a` | `--user-agent` | String | *Default UA* | Custom HTTP User-Agent header. |
@@ -395,9 +406,9 @@ python3 -m unittest discover tests
 
 Output:
 ```
-.......................
+............................
 ----------------------------------------------------------------------
-Ran 23 tests in 0.035s
+Ran 28 tests in 0.041s
 
 OK
 ```

@@ -25,6 +25,7 @@ from .heuristics import Soft404Detector, WAFDetector
 from .network_diag import NetworkDiagnostics, NetworkDiagResult
 from .reporter import ScanReporter
 from .requester import HTTPRequester, ScanResult
+from .security_assertions import SecurityAssertion, SecurityAssertionValidator
 from .security_audit import SecurityAuditor, SecurityAuditResult, SecurityFinding
 from .sitemap import SiteMapTree
 
@@ -42,6 +43,8 @@ __all__ = [
     "SecurityAuditor",
     "SecurityAuditResult",
     "SecurityFinding",
+    "SecurityAssertion",
+    "SecurityAssertionValidator",
     "CertInspector",
     "CertificateInfo",
     "RouteHarvester",

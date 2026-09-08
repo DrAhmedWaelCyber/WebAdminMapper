@@ -90,6 +90,7 @@ class ScanConfig:
     security_audit: bool = True
     cert_inspect: bool = True
     network_diag: bool = True
+    validate_vulns: bool = True
     checkpoint_file: Optional[str] = None
     resume_checkpoint: Optional[str] = None
 
@@ -179,6 +180,7 @@ class ScanConfig:
             "security_audit": self.security_audit,
             "cert_inspect": self.cert_inspect,
             "network_diag": self.network_diag,
+            "validate_vulns": self.validate_vulns,
             "checkpoint_file": self.checkpoint_file,
             "resume_checkpoint": self.resume_checkpoint,
             "author": __author__,

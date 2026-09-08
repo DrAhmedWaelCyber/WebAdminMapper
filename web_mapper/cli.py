@@ -23,6 +23,7 @@ from .engine import ExecutionEngine
 from .network_diag import NetworkDiagnostics, NetworkDiagResult
 from .reporter import Colors, ScanReporter
 from .requester import HTTPRequester, ScanResult
+from .security_assertions import SecurityAssertion, SecurityAssertionValidator
 from .security_audit import SecurityAuditor, SecurityAuditResult
 
 __author__ = "Ahmed Wael"
@@ -312,6 +313,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable rendering hierarchical directory tree at scan conclusion",
     )
     heur_group.add_argument(
+        "--audit-vulns",
+        dest="audit_vulns",
+        action="store_true",
+        default=True,
+        help="Perform automated non-destructive security assertions and vulnerability validation (default: enabled)",
+    )
+    heur_group.add_argument(
+        "--no-vuln-validate",
+        dest="no_vuln_validate",
+        action="store_true",
+        help="Disable automated security assertions and vulnerability validation",
+    )
+    heur_group.add_argument(
         "--no-title",
         dest="no_title",
         action="store_true",
@@ -555,6 +569,12 @@ def run_scanner(config: ScanConfig) -> int:
         sys.stdout.write("\r" + " " * 80 + "\r")
         sys.stdout.flush()
 
+    # Automated Security Assertions & Vulnerability Validations
+    security_assertions: List[SecurityAssertion] = []
+    if config.validate_vulns and results:
+        validator = SecurityAssertionValidator()
+        security_assertions = validator.validate_all(results)
+
     # Summary
     if not config.quiet:
         reporter.print_summary(
@@ -567,6 +587,7 @@ def run_scanner(config: ScanConfig) -> int:
             security_audit=security_audit,
             cert_info=cert_info,
             network_diag=network_diag,
+            security_assertions=security_assertions,
             crawled_routes_count=len(harvested_routes),
         )
 
@@ -581,6 +602,7 @@ def run_scanner(config: ScanConfig) -> int:
             security_audit=security_audit,
             cert_info=cert_info,
             network_diag=network_diag,
+            security_assertions=security_assertions,
         )
         if out_saved and not config.quiet:
             print(f"  {Colors.GREEN}[+] Report successfully exported to:{Colors.RESET} {out_saved}")
@@ -682,6 +704,7 @@ def main() -> None:
                 security_audit=not args.no_audit,
                 cert_inspect=not args.no_cert,
                 network_diag=not args.no_net_diag,
+                validate_vulns=not args.no_vuln_validate,
                 checkpoint_file=args.checkpoint,
                 resume_checkpoint=args.resume,
             )

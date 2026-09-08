@@ -21,6 +21,7 @@ from .cert_inspector import CertificateInfo
 from .config import ScanConfig
 from .network_diag import NetworkDiagResult
 from .requester import ScanResult
+from .security_assertions import SecurityAssertion
 from .security_audit import SecurityAuditResult
 from .sitemap import SiteMapTree
 
@@ -118,6 +119,7 @@ class ScanReporter:
         security_audit: Optional[SecurityAuditResult] = None,
         cert_info: Optional[CertificateInfo] = None,
         network_diag: Optional[NetworkDiagResult] = None,
+        security_assertions: Optional[List[SecurityAssertion]] = None,
         crawled_routes_count: int = 0,
     ) -> None:
         """Display comprehensive scan summary, security posture, and hierarchy."""
@@ -157,6 +159,14 @@ class ScanReporter:
             grade_color = Colors.GREEN if security_audit.grade in ("A+", "A") else Colors.YELLOW if security_audit.grade == "B" else Colors.RED
             print(f"  Security Posture  : Grade {grade_color}{security_audit.grade}{Colors.RESET} ({security_audit.score}/100) - {len(security_audit.findings)} findings")
 
+        if security_assertions:
+            high_count = sum(1 for a in security_assertions if a.severity == "HIGH")
+            med_count = sum(1 for a in security_assertions if a.severity == "MEDIUM")
+            low_count = sum(1 for a in security_assertions if a.severity in ("LOW", "INFO"))
+            high_disp = f"{Colors.RED}{high_count} High{Colors.RESET}" if high_count else "0 High"
+            med_disp = f"{Colors.YELLOW}{med_count} Medium{Colors.RESET}" if med_count else "0 Medium"
+            print(f"  Security Assertions: {high_disp}, {med_disp}, {low_count} Low/Info ({len(security_assertions)} findings)")
+
         print(f"  Developer/Author  : {Colors.BOLD}Ahmed Wael{Colors.RESET}")
         print(f"{Colors.BLUE}{'=' * 74}{Colors.RESET}")
 
@@ -177,6 +187,7 @@ class ScanReporter:
         security_audit: Optional[SecurityAuditResult] = None,
         cert_info: Optional[CertificateInfo] = None,
         network_diag: Optional[NetworkDiagResult] = None,
+        security_assertions: Optional[List[SecurityAssertion]] = None,
     ) -> Optional[Path]:
         """Export results to configured destination file."""
         if not self.config.output_file:
@@ -187,13 +198,13 @@ class ScanReporter:
         fmt = self.config.output_format.lower()
 
         if fmt == "html":
-            self._save_html(out_path, results, duration_sec, detected_techs, detected_waf, sitemap, security_audit, cert_info, network_diag)
+            self._save_html(out_path, results, duration_sec, detected_techs, detected_waf, sitemap, security_audit, cert_info, network_diag, security_assertions)
         elif fmt == "json":
-            self._save_json(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag)
+            self._save_json(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions)
         elif fmt == "csv":
             self._save_csv(out_path, results)
         elif fmt == "markdown":
-            self._save_markdown(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag)
+            self._save_markdown(out_path, results, duration_sec, detected_techs, detected_waf, security_audit, cert_info, network_diag, security_assertions)
         else:
             self._save_txt(out_path, results)
 
@@ -209,6 +220,7 @@ class ScanReporter:
         sec: Optional[SecurityAuditResult],
         cert: Optional[CertificateInfo],
         network_diag: Optional[NetworkDiagResult] = None,
+        security_assertions: Optional[List[SecurityAssertion]] = None,
     ) -> None:
         latencies = [r.response_time_ms for r in results]
         data = {
@@ -226,6 +238,7 @@ class ScanReporter:
                 "network_diagnostics": network_diag.to_dict() if network_diag else None,
                 "tls_certificate": cert.to_dict() if cert else None,
                 "security_audit": sec.to_dict() if sec else None,
+                "security_assertions": [a.to_dict() for a in (security_assertions or [])],
             },
             "configuration": self.config.to_dict(),
             "results": [r.to_dict() for r in results],
@@ -268,6 +281,7 @@ class ScanReporter:
         sec: Optional[SecurityAuditResult],
         cert: Optional[CertificateInfo],
         network_diag: Optional[NetworkDiagResult] = None,
+        security_assertions: Optional[List[SecurityAssertion]] = None,
     ) -> None:
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# WebAdminMapper Audit Report\n\n")
@@ -287,9 +301,16 @@ class ScanReporter:
                 f.write(f"- **TLS Certificate:** {cert.issuer} (Expires in {cert.days_remaining} days, {cert.tls_version})\n")
             if sec:
                 f.write(f"- **Security Posture Grade:** **{sec.grade}** ({sec.score}/100)\n\n")
-                f.write("### Security Findings\n\n")
+                f.write("### Defensive Header Findings\n\n")
                 for finding in sec.findings:
                     f.write(f"- **[{finding.severity}] {finding.name}:** {finding.description} *(Fix: {finding.recommendation})*\n")
+
+            if security_assertions:
+                f.write("\n### Automated Security Assertions & Vulnerability Validations\n\n")
+                f.write("| Severity | Category | Assertion / Finding | Endpoint | Remediation |\n")
+                f.write("| :--- | :--- | :--- | :--- | :--- |\n")
+                for a in security_assertions:
+                    f.write(f"| `{a.severity}` | {a.category} | **{a.title}** | `{a.endpoint}` | {a.remediation} |\n")
 
             f.write("\n## Discovered Endpoints\n\n")
             f.write("| Status | Size | Words | Time | Path | Title / Redirect |\n")
@@ -327,6 +348,7 @@ class ScanReporter:
         sec: Optional[SecurityAuditResult],
         cert: Optional[CertificateInfo],
         network_diag: Optional[NetworkDiagResult] = None,
+        security_assertions: Optional[List[SecurityAssertion]] = None,
     ) -> None:
         """Generate a sleek, responsive HTML dashboard report."""
         tech_badges = "".join(f'<span class="badge badge-tech">{html.escape(t)}</span>' for t in (techs or [])) or "<em>None detected</em>"
@@ -369,7 +391,43 @@ class ScanReporter:
                   <td><code style="color: #7ee787;">{html.escape(f.recommendation)}</code></td>
                 </tr>
                 """)
-            sec_findings_html = "".join(f_rows)
+        assertions_html = ""
+        if security_assertions:
+            a_rows = []
+            for a in security_assertions:
+                badge = "st-5xx" if a.severity == "HIGH" else "st-4xx" if a.severity == "MEDIUM" else "st-3xx"
+                a_rows.append(f"""
+                <tr>
+                  <td><span class="badge {badge}">{a.severity}</span></td>
+                  <td><strong>{html.escape(a.category)}</strong></td>
+                  <td><strong>{html.escape(a.title)}</strong><br><span style="font-size: 12px; color: #8b949e;">{html.escape(a.description)}</span></td>
+                  <td><code>{html.escape(a.endpoint)}</code></td>
+                  <td><span style="font-size: 12px; color: #8b949e;">{html.escape(a.evidence)}</span></td>
+                  <td><code style="color: #7ee787;">{html.escape(a.remediation)}</code></td>
+                </tr>
+                """)
+            assertions_html = f"""
+            <div class="table-container" style="margin-bottom: 24px;">
+              <div style="padding: 16px; font-weight: bold; font-size: 16px; border-bottom: 1px solid var(--border);">
+                🛡️ Automated Security Assertions & Vulnerability Validations ({len(security_assertions)})
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>Category</th>
+                    <th>Assertion / Finding</th>
+                    <th>Endpoint</th>
+                    <th>Evidence</th>
+                    <th>Remediation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {"".join(a_rows)}
+                </tbody>
+              </table>
+            </div>
+            """
 
         cert_html = ""
         if cert:
@@ -521,6 +579,8 @@ class ScanReporter:
       </table>
     </div>
     ''' if sec and sec_findings_html else ''}
+
+    {assertions_html}
 
     <div class="table-container">
       <div class="table-controls">
